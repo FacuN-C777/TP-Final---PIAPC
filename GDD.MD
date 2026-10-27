@@ -1,4 +1,4 @@
-# GDD breve — “Golpe Nocturno”
+# GDD breve — “Asecho Nocturno”
 
 TP Final Integrador — PIAPC  
 Prototipo individual — Phaser 4, Vite y TypeScript
