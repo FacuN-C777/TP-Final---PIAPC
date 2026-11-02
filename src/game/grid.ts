@@ -28,17 +28,36 @@ export const TEST_MAP: readonly string[] = [
     '#################'
 ];
 
-if (TEST_MAP.length !== GRID_ROWS)
+function validateMap (map: readonly string[], mapName: string): void
 {
-    throw new Error(`El mapa de prueba debe tener ${GRID_ROWS} filas.`);
+    if (map.length !== GRID_ROWS)
+    {
+        throw new Error(`El ${mapName} debe tener ${GRID_ROWS} filas.`);
+    }
+
+    map.forEach((row, index) => {
+        if (row.length !== GRID_COLUMNS)
+        {
+            throw new Error(`La fila ${index} del ${mapName} debe tener ${GRID_COLUMNS} celdas.`);
+        }
+    });
 }
 
-TEST_MAP.forEach((row, index) => {
-    if (row.length !== GRID_COLUMNS)
-    {
-        throw new Error(`La fila ${index} del mapa de prueba debe tener ${GRID_COLUMNS} celdas.`);
-    }
-});
+validateMap(TEST_MAP, 'mapa de prueba');
+
+let activeMap: readonly string[] = TEST_MAP;
+
+export function setActiveMap (map: readonly string[]): void
+{
+    validateMap(map, 'mapa activo');
+
+    activeMap = map;
+}
+
+export function getActiveMap (): readonly string[]
+{
+    return activeMap;
+}
 
 export function isValidCell (cell: Cell): boolean
 {
@@ -47,7 +66,7 @@ export function isValidCell (cell: Cell): boolean
 
 export function isWalkable (cell: Cell): boolean
 {
-    return isValidCell(cell) && TEST_MAP[cell.row][cell.col] !== '#';
+    return isValidCell(cell) && activeMap[cell.row][cell.col] !== '#';
 }
 
 export function cellToWorld (cell: Cell): { x: number; y: number }

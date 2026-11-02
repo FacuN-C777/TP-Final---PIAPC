@@ -8,18 +8,19 @@ import {
     GRID_WIDTH,
     GRID_X,
     GRID_Y,
-    TEST_MAP,
     cellToWorld,
     cellsEqual,
+    getActiveMap,
     isWalkable,
+    setActiveMap,
     worldToCell,
     type Cell
 } from '../grid';
 import { findPath, type SearchAlgorithm } from '../pathfinding';
 import { buildWaypoints, type NavigationMode } from '../navigation';
+import { generateScenario, type GuardCount, type Scenario } from '../scenario';
 
 const MOVE_SPEED = 5;
-const START_CELL: Cell = { col: 1, row: 1 };
 
 const COLORS = {
     floor: 0x2f333b,
@@ -27,16 +28,24 @@ const COLORS = {
     wallEdge: 0x7a8291,
     gridLine: 0x1c1f25,
     route: 0x5ad1ff,
-    ladron: 0xf2c14e
+    ladron: 0xf2c14e,
+    key: 0xffd166,
+    door: 0x9c6b3f,
+    treasure: 0xff9f43,
+    exit: 0x7ee787,
+    hiding: 0xb388ff,
+    guard: 0xff5c5c
 };
 
 export class Game extends Scene
 {
     private algorithm: SearchAlgorithm = 'BFS';
     private navigationMode: NavigationMode = 'cells';
+    private guardCount: GuardCount = 1;
     private routeVisible = true;
+    private scenario!: Scenario;
     private ladron!: GameObjects.Arc;
-    private ladronCell: Cell = START_CELL;
+    private ladronCell: Cell = { col: 1, row: 1 };
     private currentPath: Cell[] = [];
     private waypoints: Cell[] = [];
     private waypointIndex = 0;
@@ -46,6 +55,7 @@ export class Game extends Scene
     private algorithmBadge!: GameObjects.Text;
     private navigationLabel!: GameObjects.Text;
     private navigationBadge!: GameObjects.Text;
+    private guardButton!: GameObjects.Text;
     private controlsText!: GameObjects.Text;
     private messageText!: GameObjects.Text;
     private messageTimer?: Time.TimerEvent;
@@ -60,7 +70,6 @@ export class Game extends Scene
         this.algorithm = 'BFS';
         this.navigationMode = 'cells';
         this.routeVisible = true;
-        this.ladronCell = START_CELL;
         this.currentPath = [];
         this.waypoints = [];
         this.waypointIndex = 0;
@@ -70,17 +79,23 @@ export class Game extends Scene
 
     create ()
     {
+        this.scenario = generateScenario({ guardCount: this.guardCount });
+        setActiveMap(this.scenario.map);
+
+        this.ladronCell = this.scenario.start;
+
         this.cameras.main.setBackgroundColor(0x111318);
 
         this.drawGrid();
+        this.drawScenarioElements();
 
-        this.routeGraphics = this.add.graphics().setDepth(1);
+        this.routeGraphics = this.add.graphics().setDepth(3);
 
         const start = cellToWorld(this.ladronCell);
 
         this.ladron = this.add.circle(start.x, start.y, CELL_SIZE * 0.28, COLORS.ladron)
             .setStrokeStyle(2, 0x111318, 1)
-            .setDepth(2);
+            .setDepth(4);
 
         this.drawHud();
 
@@ -116,6 +131,7 @@ export class Game extends Scene
     private drawGrid ()
     {
         const graphics = this.add.graphics();
+        const map = getActiveMap();
 
         graphics.fillStyle(COLORS.floor, 1);
         graphics.fillRect(GRID_X, GRID_Y, GRID_WIDTH, GRID_HEIGHT);
@@ -136,7 +152,7 @@ export class Game extends Scene
 
         for (let row = 0; row < GRID_ROWS; row++)
         {
-            const cells = TEST_MAP[row];
+            const cells = map[row];
 
             for (let column = 0; column < GRID_COLUMNS; column++)
             {
@@ -157,6 +173,49 @@ export class Game extends Scene
 
         graphics.lineStyle(2, COLORS.wallEdge, 1);
         graphics.strokeRect(GRID_X, GRID_Y, GRID_WIDTH, GRID_HEIGHT);
+    }
+
+    private drawScenarioElements ()
+    {
+        this.addScenarioMarker(this.scenario.door, COLORS.door, 'P', 'square', CELL_SIZE * 0.92, 1);
+
+        this.addScenarioMarker(this.scenario.key, COLORS.key, 'L', 'circle', CELL_SIZE * 0.5);
+        this.addScenarioMarker(this.scenario.exit, COLORS.exit, 'S', 'square', CELL_SIZE * 0.72);
+
+        this.scenario.treasures.forEach((treasure) => {
+            this.addScenarioMarker(treasure, COLORS.treasure, 'T', 'square', CELL_SIZE * 0.58);
+        });
+
+        this.scenario.hidingSpots.forEach((hidingSpot) => {
+            this.addScenarioMarker(hidingSpot, COLORS.hiding, 'E', 'circle', CELL_SIZE * 0.58, 0.65);
+        });
+
+        this.scenario.guards.forEach((guard) => {
+            this.addScenarioMarker(guard, COLORS.guard, 'G', 'circle', CELL_SIZE * 0.62);
+        });
+    }
+
+    private addScenarioMarker (
+        cell: Cell,
+        color: number,
+        label: string,
+        shape: 'square' | 'circle',
+        size: number,
+        alpha = 0.85
+    )
+    {
+        const position = cellToWorld(cell);
+        const marker: GameObjects.Arc | GameObjects.Rectangle = shape === 'circle'
+            ? this.add.circle(position.x, position.y, size / 2, color, alpha)
+            : this.add.rectangle(position.x, position.y, size, size, color, alpha);
+
+        marker.setStrokeStyle(2, 0x111318, 0.9).setDepth(1);
+
+        this.add.text(position.x, position.y, label, {
+            fontFamily: 'Arial Black, Arial, sans-serif',
+            fontSize: '16px',
+            color: '#111318'
+        }).setOrigin(0.5).setDepth(2);
     }
 
     private drawHud ()
@@ -197,6 +256,20 @@ export class Game extends Scene
             padding: { left: 10, right: 10, top: 1, bottom: 1 }
         }).setOrigin(0, 0.5).setDepth(10);
 
+        this.guardButton = this.add.text(1004, 50, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '15px',
+            fontStyle: 'bold',
+            color: '#111318',
+            backgroundColor: '#ffb4a2',
+            padding: { left: 10, right: 10, top: 2, bottom: 2 }
+        }).setOrigin(1, 0.5).setDepth(10).setInteractive({ useHandCursor: true });
+
+        this.guardButton.on('pointerdown', () => {
+            this.guardCount = this.guardCount === 1 ? 2 : 1;
+            this.scene.restart();
+        });
+
         this.controlsText = this.add.text(512, 88, '', {
             fontFamily: 'Arial, sans-serif',
             fontSize: '13px',
@@ -219,6 +292,7 @@ export class Game extends Scene
 
         this.algorithmBadge.setText(this.algorithm);
         this.navigationBadge.setText(this.navigationMode === 'cells' ? 'Por celdas' : 'Suavizada');
+        this.guardButton.setText(`Guardias: ${this.guardCount}`);
 
         const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
         const algorithmStartX = 512 - algorithmWidth / 2;
@@ -233,7 +307,7 @@ export class Game extends Scene
         this.navigationBadge.setPosition(navigationStartX + this.navigationLabel.width + gap, 70);
 
         this.controlsText.setText(
-            `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  N: navegación  |  P: ruta  |  R: reiniciar`
+            `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  N: navegación  |  P: ruta  |  R: nueva partida`
         );
     }
 
@@ -275,11 +349,22 @@ export class Game extends Scene
 
     private handlePointerDown (pointer: Input.Pointer)
     {
+        if (pointer.y < GRID_Y)
+        {
+            return;
+        }
+
         const target = worldToCell(pointer.x, pointer.y);
 
         if (!target)
         {
             this.showMessage('Clic inválido: fuera de la grilla.');
+            return;
+        }
+
+        if (cellsEqual(target, this.scenario.door))
+        {
+            this.showMessage('La puerta está cerrada.');
             return;
         }
 

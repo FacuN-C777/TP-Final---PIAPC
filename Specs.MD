@@ -19,8 +19,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 01 — Grilla y escena | Terminada | — |
 | 02 — Búsquedas y movimiento | Terminada | 01 |
 | 03 — Navegación | Terminada | 02 |
-| 04 — Escenarios variables | Pendiente — plan aprobado | 02 |
-| 05 — Interacción y victoria | Pendiente | 04 |
+| 04 — Escenarios variables | Terminada — aprobada | 02 |
+| 05 — Interacción y victoria | Pendiente — plan preparado | 04 |
 | 06 — Percepción | Pendiente | 05 |
 | 07 — FSM del guardia y derrota | Pendiente | 06 |
 | 08 — UI final y pulido | Pendiente | 01–07 |
@@ -102,7 +102,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Persecución directa, campos de flujo, steering, movimiento libre y cambios al algoritmo de búsqueda.
 
-**Enfoque acordado (aprobado, pendiente de implementación):**
+**Enfoque implementado:**
 - Mantener `findPath` sin cambios; la navegación solo transforma el camino de celdas en waypoints.
 - Agregar un modo `Por celdas` / `Suavizada`, seleccionable con `N` y visible en el HUD.
 - En `Suavizada`, aplicar string-pulling: conservar inicio y destino y eliminar waypoints intermedios cuando haya línea de visión directa.
@@ -139,7 +139,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Interacciones de llave, puerta y tesoros; victoria; percepción; FSM; puntaje; semillas y guardado.
 
-**Enfoque acordado (aprobado, pendiente de implementación):**
+**Enfoque implementado:**
 - Refactor mínimo de `grid.ts` con `setActiveMap`/`getActiveMap`; `isWalkable` consulta el mapa activo y `TEST_MAP` queda como referencia.
 - Crear `scenario.ts` con `Scenario` y `generateScenario({ guardCount })`.
 - Generar una barrera vertical u horizontal con una única puerta, paredes decorativas y lados A/B.
@@ -156,6 +156,11 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 3. Verificar que la salida y al menos un tesoro quedan del otro lado de la puerta.
 4. Comprobar que no hay elementos inalcanzables ni guardias superpuestos con el ladrón.
 5. Cambiar entre 1 y 2 guardias y confirmar que la cantidad se respeta.
+
+**Verificación realizada:**
+- Prueba programática con esbuild + Node sobre 600 escenarios (300 con 1 guardia, 300 con 2): todos pasaron `validateScenario`, mapas/layouts únicos, tesoros 2/3, escondites 1/2 y rangos variables de paredes.
+- `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
+- Prueba CDP con Chrome headless sobre `npm run dev-nolog`: inicio con 1 guardia, 2 tesoros, 2 escondites; clic en la puerta rechazado con "La puerta está cerrada" sin mover al ladrón; clic válido movió al ladrón al destino; `R` generó mapa distinto conservando 1 guardia; botón de guardias alternó a 2 y regeneró el escenario; `R` conservó 2 guardias; sin errores de consola.
 
 ---
 
@@ -176,6 +181,21 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - Guardias y derrota, puntaje, bonificaciones, varias llaves o puertas, percepción y FSM.
+
+**Enfoque preparado (pendiente de implementación):**
+- Estado de interacción en `Game.ts`: `hasKey`, tesoros recogidos, `doorOpen` y `gameWon`; reiniciar todo en `init()` y en cada nueva partida.
+- Resolver llave, tesoros y salida al completar cada celda del recorrido, no solo al llegar a un waypoint: en navegación suavizada hay celdas intermedias salteadas. Llevar un índice sobre `currentPath` y procesar el tramo recorrido.
+- Llave: recogerla automáticamente, ocultar su marcador, actualizar HUD y avisar con un mensaje breve.
+- Tesoros: recogerlos automáticamente, ocultar cada marcador, incrementar el contador y actualizar HUD. Los extra no cambian la victoria.
+- Puerta:
+  - sin llave, rechazar el clic con “La puerta está cerrada.”;
+  - con llave, abrirla: reemplazar `#` por piso en el mapa de `scenario`, llamar a `setActiveMap()`, mantener `doorOpen = true`, actualizar el marcador y el HUD;
+  - una vez abierta, permitir el paso normal y mantenerla abierta durante el resto de la partida.
+- Salida:
+  - con 0 tesoros, mostrar un aviso y no terminar la partida;
+  - con 1 o más, detener el movimiento, marcar `gameWon`, mostrar un mensaje de victoria persistente e ignorar clics de movimiento hasta `R`.
+- HUD: agregar estado de llave, puerta y tesoros recogidos / total sin superponerse a la grilla (`y < GRID_Y`).
+- No modificar la generación ni BFS/DFS/A* ni el suavizado salvo que aparezca un bug.
 
 **Cómo comprobarla jugando:**
 1. Intentar cruzar la puerta sin llave y confirmar que el clic se rechaza o el paso queda bloqueado.
