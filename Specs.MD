@@ -1,4 +1,4 @@
-# Specs — “Golpe Nocturno”
+# Specs — “Asecho Nocturno”
 
 TP Final Integrador — PIAPC  
 Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña y verificable.
@@ -16,8 +16,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 | Spec | Estado | Depende de |
 |---|---|---|
-| 01 — Grilla y escena | Pendiente | — |
-| 02 — Búsquedas y movimiento | Pendiente | 01 |
+| 01 — Grilla y escena | Terminada | — |
+| 02 — Búsquedas y movimiento | Plan aprobado — pendiente de implementación | 01 |
 | 03 — Navegación | Pendiente | 02 |
 | 04 — Escenarios variables | Pendiente | 02 |
 | 05 — Interacción y victoria | Pendiente | 04 |
@@ -66,6 +66,15 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - Navegación suavizada, generación aleatoria, guardias, llave, puerta, tesoros, salida y percepción.
+
+**Enfoque acordado:**
+- Extraer constantes, mapa fijo y helpers de grilla a `src/game/grid.ts`.
+- Crear `src/game/pathfinding.ts` con BFS, DFS y A* sobre la misma grilla.
+- Agregar el ladrón como figura simple en una celda inicial fija.
+- Mover celda a celda con velocidad constante de 5 celdas por segundo.
+- Mostrar la ruta por defecto como línea con puntos sobre las celdas.
+- Rechazar clics inválidos con un aviso breve y recalcular si se hace clic mientras se mueve.
+- No implementar todavía: primero el usuario hará el commit de la Spec 01 y creará una rama nueva.
 
 **Cómo comprobarla jugando:**
 1. Probar un mismo destino con BFS, DFS y A* y comparar visualmente las rutas.

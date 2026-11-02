@@ -3,22 +3,23 @@
 ## Estado actual del proyecto
 
 - TP Final Integrador de PIAPC, individual.
-- Motor: Phaser 4 con Vite y TypeScript. El repositorio todavía contiene el template original.
+- Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. Todavía no hay specs implementadas.
-- `src/game/scenes/Game.ts` sigue mostrando la pantalla de bienvenida del template. No hay código de juego.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. El plan de la Spec 02 está aprobado, pero su implementación todavía no comenzó.
+- `src/game/scenes/Game.ts` muestra una grilla fija de 17 × 13 con paredes, suelo, HUD base y reinicio con `R`.
 - No se creó la carpeta `specs/`; el documento acordado es `Specs.MD` en la raíz.
 
 ## Próximo paso
 
-Empezar por la **Spec 01 — Grilla y escena**. Antes de modificar archivos:
+La **Spec 01 — Grilla y escena** está terminada y aprobada. El plan de la **Spec 02 — Búsquedas y movimiento** también está aprobado y registrado en `Specs.MD`.
 
-1. Leer `GDD.MD` y `Specs.MD`.
-2. Proponer un plan corto para la Spec 01.
-3. Esperar aprobación explícita del usuario.
-4. Implementar solo esa spec.
-5. Verificar y explicar cómo probarla jugando.
-6. Esperar aprobación antes de pasar a la Spec 02.
+Antes de implementarla, el usuario hará el commit de la Spec 01 y creará una rama nueva. No implementar la Spec 02 hasta que esa rama esté creada y el usuario lo indique.
+
+Cuando corresponda:
+
+1. Implementar solo la Spec 02 según el enfoque acordado.
+2. Verificar typecheck, build, consola y comportamiento jugando.
+3. Esperar aprobación antes de pasar a la Spec 03.
 
 ## Reglas de trabajo
 
@@ -43,6 +44,10 @@ npm run build
 También existen `npm run dev-nolog` y `npm run build-nolog` para evitar el envío de datos del template.
 
 El servidor de desarrollo usa `http://localhost:8080` por defecto.
+
+En este equipo `npm.ps1` está bloqueado por la política de ejecución de PowerShell. Usar `npm.cmd run ...` (por ejemplo, `npm.cmd run dev-nolog` o `npm.cmd run build-nolog`).
+
+Si la consola del navegador muestra un error de `content-script-start.js` o `Could not establish connection`, proviene de una extensión del navegador y no del proyecto. En Chrome headless con perfil limpio no aparece.
 
 ## Restricciones del TP
 
