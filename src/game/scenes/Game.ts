@@ -16,6 +16,7 @@ import {
     type Cell
 } from '../grid';
 import { findPath, type SearchAlgorithm } from '../pathfinding';
+import { buildWaypoints, type NavigationMode } from '../navigation';
 
 const MOVE_SPEED = 5;
 const START_CELL: Cell = { col: 1, row: 1 };
@@ -32,15 +33,19 @@ const COLORS = {
 export class Game extends Scene
 {
     private algorithm: SearchAlgorithm = 'BFS';
+    private navigationMode: NavigationMode = 'cells';
     private routeVisible = true;
     private ladron!: GameObjects.Arc;
     private ladronCell: Cell = START_CELL;
     private currentPath: Cell[] = [];
-    private pathIndex = 0;
+    private waypoints: Cell[] = [];
+    private waypointIndex = 0;
     private moving = false;
     private routeGraphics!: GameObjects.Graphics;
     private algorithmLabel!: GameObjects.Text;
     private algorithmBadge!: GameObjects.Text;
+    private navigationLabel!: GameObjects.Text;
+    private navigationBadge!: GameObjects.Text;
     private controlsText!: GameObjects.Text;
     private messageText!: GameObjects.Text;
     private messageTimer?: Time.TimerEvent;
@@ -53,10 +58,12 @@ export class Game extends Scene
     init ()
     {
         this.algorithm = 'BFS';
+        this.navigationMode = 'cells';
         this.routeVisible = true;
         this.ladronCell = START_CELL;
         this.currentPath = [];
-        this.pathIndex = 0;
+        this.waypoints = [];
+        this.waypointIndex = 0;
         this.moving = false;
         this.messageTimer = undefined;
     }
@@ -91,6 +98,10 @@ export class Game extends Scene
 
         this.input.keyboard?.on('keydown-THREE', () => {
             this.setAlgorithm('A*');
+        });
+
+        this.input.keyboard?.on('keydown-N', () => {
+            this.toggleNavigation();
         });
 
         this.input.keyboard?.on('keydown-P', () => {
@@ -171,7 +182,22 @@ export class Game extends Scene
             padding: { left: 10, right: 10, top: 1, bottom: 1 }
         }).setOrigin(0, 0.5).setDepth(10);
 
-        this.controlsText = this.add.text(512, 76, '', {
+        this.navigationLabel = this.add.text(0, 70, 'Navegación actual:', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '15px',
+            color: '#aab2c0'
+        }).setOrigin(0, 0.5).setDepth(10);
+
+        this.navigationBadge = this.add.text(0, 70, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '16px',
+            fontStyle: 'bold',
+            color: '#111318',
+            backgroundColor: '#7cc6ff',
+            padding: { left: 10, right: 10, top: 1, bottom: 1 }
+        }).setOrigin(0, 0.5).setDepth(10);
+
+        this.controlsText = this.add.text(512, 88, '', {
             fontFamily: 'Arial, sans-serif',
             fontSize: '13px',
             color: '#aab2c0'
@@ -192,15 +218,22 @@ export class Game extends Scene
         const gap = 8;
 
         this.algorithmBadge.setText(this.algorithm);
+        this.navigationBadge.setText(this.navigationMode === 'cells' ? 'Por celdas' : 'Suavizada');
 
-        const width = this.algorithmLabel.width + gap + this.algorithmBadge.width;
-        const startX = 512 - width / 2;
+        const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
+        const algorithmStartX = 512 - algorithmWidth / 2;
 
-        this.algorithmLabel.setPosition(startX, 50);
-        this.algorithmBadge.setPosition(startX + this.algorithmLabel.width + gap, 50);
+        this.algorithmLabel.setPosition(algorithmStartX, 50);
+        this.algorithmBadge.setPosition(algorithmStartX + this.algorithmLabel.width + gap, 50);
+
+        const navigationWidth = this.navigationLabel.width + gap + this.navigationBadge.width;
+        const navigationStartX = 512 - navigationWidth / 2;
+
+        this.navigationLabel.setPosition(navigationStartX, 70);
+        this.navigationBadge.setPosition(navigationStartX + this.navigationLabel.width + gap, 70);
 
         this.controlsText.setText(
-            `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  P: ruta  |  R: reiniciar`
+            `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  N: navegación  |  P: ruta  |  R: reiniciar`
         );
     }
 
@@ -208,6 +241,29 @@ export class Game extends Scene
     {
         this.algorithm = algorithm;
         this.updateHud();
+    }
+
+    private toggleNavigation ()
+    {
+        this.navigationMode = this.navigationMode === 'cells' ? 'smooth' : 'cells';
+
+        if (this.moving && this.currentPath.length > 1)
+        {
+            const destination = this.currentPath[this.currentPath.length - 1];
+            const origin = this.getCurrentCell();
+
+            this.cancelMovement(origin);
+
+            const path = findPath(origin, destination, this.algorithm);
+
+            if (path && path.length > 1)
+            {
+                this.startPath(path);
+            }
+        }
+
+        this.updateHud();
+        this.drawRoute();
     }
 
     private toggleRoute ()
@@ -255,12 +311,18 @@ export class Game extends Scene
         }
 
         this.ladronCell = origin;
+        this.startPath(path);
+    }
+
+    private startPath (path: Cell[])
+    {
         this.currentPath = path;
-        this.pathIndex = 1;
+        this.waypoints = buildWaypoints(path, this.navigationMode);
+        this.waypointIndex = 1;
         this.moving = true;
 
         this.drawRoute();
-        this.moveToNextStep();
+        this.moveToNextWaypoint();
     }
 
     private getCurrentCell (): Cell
@@ -281,39 +343,45 @@ export class Game extends Scene
 
         this.ladronCell = cell;
         this.currentPath = [];
-        this.pathIndex = 0;
+        this.waypoints = [];
+        this.waypointIndex = 0;
         this.moving = false;
     }
 
-    private moveToNextStep ()
+    private moveToNextWaypoint ()
     {
-        if (this.pathIndex >= this.currentPath.length)
+        if (this.waypointIndex >= this.waypoints.length)
         {
             this.moving = false;
             return;
         }
 
-        const nextCell = this.currentPath[this.pathIndex];
-        const target = cellToWorld(nextCell);
+        const nextWaypoint = this.waypoints[this.waypointIndex];
+        const target = cellToWorld(nextWaypoint);
+        const distanceInCells = Math.hypot(
+            (target.x - this.ladron.x) / CELL_SIZE,
+            (target.y - this.ladron.y) / CELL_SIZE
+        );
+        const duration = (distanceInCells * 1000) / MOVE_SPEED;
 
         this.tweens.add({
             targets: this.ladron,
             x: target.x,
             y: target.y,
-            duration: 1000 / MOVE_SPEED,
+            duration,
             ease: 'Linear',
             onComplete: () => {
-                this.ladronCell = nextCell;
-                this.pathIndex++;
+                this.ladronCell = nextWaypoint;
+                this.waypointIndex++;
                 this.drawRoute();
 
-                if (this.pathIndex >= this.currentPath.length)
+                if (this.waypointIndex >= this.waypoints.length)
                 {
                     this.moving = false;
                     return;
                 }
 
-                this.moveToNextStep();
+                this.moveToNextWaypoint();
             }
         });
     }
@@ -322,8 +390,8 @@ export class Game extends Scene
     {
         this.routeGraphics.clear();
 
-        const startIndex = Math.max(0, this.pathIndex - 1);
-        const remainingPath = this.currentPath.slice(startIndex);
+        const startIndex = Math.max(0, this.waypointIndex - 1);
+        const remainingPath = this.waypoints.slice(startIndex);
 
         if (!this.routeVisible || remainingPath.length < 2)
         {

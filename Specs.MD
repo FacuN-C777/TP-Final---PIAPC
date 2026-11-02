@@ -18,8 +18,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 |---|---|---|
 | 01 — Grilla y escena | Terminada | — |
 | 02 — Búsquedas y movimiento | Terminada | 01 |
-| 03 — Navegación | Pendiente — plan aprobado | 02 |
-| 04 — Escenarios variables | Pendiente | 02 |
+| 03 — Navegación | Terminada | 02 |
+| 04 — Escenarios variables | Pendiente — plan aprobado | 02 |
 | 05 — Interacción y victoria | Pendiente | 04 |
 | 06 — Percepción | Pendiente | 05 |
 | 07 — FSM del guardia y derrota | Pendiente | 06 |
@@ -138,6 +138,17 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - Interacciones de llave, puerta y tesoros; victoria; percepción; FSM; puntaje; semillas y guardado.
+
+**Enfoque acordado (aprobado, pendiente de implementación):**
+- Refactor mínimo de `grid.ts` con `setActiveMap`/`getActiveMap`; `isWalkable` consulta el mapa activo y `TEST_MAP` queda como referencia.
+- Crear `scenario.ts` con `Scenario` y `generateScenario({ guardCount })`.
+- Generar una barrera vertical u horizontal con una única puerta, paredes decorativas y lados A/B.
+- Lado A: inicio y llave. Lado B: salida y al menos un tesoro. Validar por inundación con puerta cerrada y abierta.
+- Tesoros 2 o 3; escondites 1 o 2 en celdas sin salida o laterales; guardias 1 o 2 lejos del inicio.
+- Regenerar hasta 200 intentos si falla la validación y usar un fallback determinístico.
+- La puerta queda como `#` (bloqueada) hasta la Spec 05; la validación simula la puerta abierta.
+- Integrar en `Game.ts`: `R` genera una nueva partida, botón de guardias en el HUD y dibujo de elementos con formas y letras.
+- No modificar BFS, DFS, A* ni el suavizado; todos deben funcionar sobre el mapa generado.
 
 **Cómo comprobarla jugando:**
 1. Generar al menos 10 partidas nuevas y comprobar que los mapas cambian.
