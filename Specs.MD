@@ -20,7 +20,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 02 — Búsquedas y movimiento | Terminada | 01 |
 | 03 — Navegación | Terminada | 02 |
 | 04 — Escenarios variables | Terminada — aprobada | 02 |
-| 05 — Interacción y victoria | Pendiente — plan preparado | 04 |
+| 05 — Interacción y victoria | Terminada — pendiente de aprobación | 04 |
 | 06 — Percepción | Pendiente | 05 |
 | 07 — FSM del guardia y derrota | Pendiente | 06 |
 | 08 — UI final y pulido | Pendiente | 01–07 |
@@ -182,20 +182,33 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Guardias y derrota, puntaje, bonificaciones, varias llaves o puertas, percepción y FSM.
 
-**Enfoque preparado (pendiente de implementación):**
-- Estado de interacción en `Game.ts`: `hasKey`, tesoros recogidos, `doorOpen` y `gameWon`; reiniciar todo en `init()` y en cada nueva partida.
-- Resolver llave, tesoros y salida al completar cada celda del recorrido, no solo al llegar a un waypoint: en navegación suavizada hay celdas intermedias salteadas. Llevar un índice sobre `currentPath` y procesar el tramo recorrido.
-- Llave: recogerla automáticamente, ocultar su marcador, actualizar HUD y avisar con un mensaje breve.
-- Tesoros: recogerlos automáticamente, ocultar cada marcador, incrementar el contador y actualizar HUD. Los extra no cambian la victoria.
+**Enfoque implementado:**
+- Estado de interacción en `Game.ts`: `hasKey`, tesoros recogidos, `doorOpen` y `gameWon`; todo se reinicia en `init()` y en cada nueva partida.
+- Las interacciones se resuelven al completar cada celda del recorrido usando un índice sobre `currentPath`; en navegación suavizada se procesa el tramo entre waypoints, incluidas las celdas intermedias salteadas.
+- Llave: se recoge automáticamente al pisar su celda, se oculta su marcador, se actualiza el HUD y se muestra un mensaje breve.
+- Tesoros: se recogen automáticamente, se ocultan sus marcadores y se actualiza el contador `Tesoros: recogidos / total`. Los extra no cambian la victoria.
 - Puerta:
-  - sin llave, rechazar el clic con “La puerta está cerrada.”;
-  - con llave, abrirla: reemplazar `#` por piso en el mapa de `scenario`, llamar a `setActiveMap()`, mantener `doorOpen = true`, actualizar el marcador y el HUD;
-  - una vez abierta, permitir el paso normal y mantenerla abierta durante el resto de la partida.
+  - sin llave, el clic se rechaza con un aviso y el ladrón no se mueve;
+  - con llave, se abre automáticamente al hacer clic en ella o al intentar cruzar hacia una celda del otro lado: se reemplaza `#` por piso en `scenario.map`, se llama a `setActiveMap()`, se marca `doorOpen = true` y se actualiza el marcador (letra `A`) y el HUD;
+  - una vez abierta, permite el paso normal y queda abierta durante el resto de la partida.
 - Salida:
-  - con 0 tesoros, mostrar un aviso y no terminar la partida;
-  - con 1 o más, detener el movimiento, marcar `gameWon`, mostrar un mensaje de victoria persistente e ignorar clics de movimiento hasta `R`.
-- HUD: agregar estado de llave, puerta y tesoros recogidos / total sin superponerse a la grilla (`y < GRID_Y`).
-- No modificar la generación ni BFS/DFS/A* ni el suavizado salvo que aparezca un bug.
+  - con 0 tesoros, muestra un aviso y no termina la partida;
+  - con 1 o más, detiene el movimiento, limpia la ruta, marca `gameWon`, muestra un mensaje de victoria persistente e ignora clics de movimiento hasta `R`.
+- HUD: se agregaron los badges de llave, puerta y tesoros en la franja superior (`y < GRID_Y`), sin superponerse a la grilla.
+- No se modificaron la generación, BFS, DFS, A* ni el suavizado.
+
+**Verificación realizada:**
+- `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
+- Prueba CDP con Chrome headless sobre `npm run dev-nolog`, con exposición temporal de la escena (retirada al terminar):
+  - clic en la puerta sin llave: rechazo con aviso, `doorOpen` falso y ladrón sin moverse;
+  - recorrido hasta la llave con navegación suavizada: se recogió, el marcador desapareció y el HUD mostró `Llave: sí`;
+  - clic en la puerta con llave: se abrió, el mapa pasó a `.`, el HUD mostró `Puerta: abierta` y el marcador cambió a `A`;
+  - salida sin tesoros: aviso y sin victoria;
+  - recolección de un tesoro: contador y HUD actualizados y marcador oculto;
+  - llegada a la salida con 1 tesoro: victoria, movimiento detenido, ruta limpia y clics posteriores ignorados;
+  - `R`: nueva partida con llave no, puerta cerrada (`#`), tesoros en 0 y marcadores visibles de nuevo;
+  - prueba del salteo de celdas intermedias en suavizada: un waypoint posterior a la llave resolvió correctamente la celda intermedia;
+  - sin errores de consola.
 
 **Cómo comprobarla jugando:**
 1. Intentar cruzar la puerta sin llave y confirmar que el clic se rechaza o el paso queda bloqueado.

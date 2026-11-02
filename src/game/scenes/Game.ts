@@ -8,6 +8,7 @@ import {
     GRID_WIDTH,
     GRID_X,
     GRID_Y,
+    cellKey,
     cellToWorld,
     cellsEqual,
     getActiveMap,
@@ -21,6 +22,18 @@ import { buildWaypoints, type NavigationMode } from '../navigation';
 import { generateScenario, type GuardCount, type Scenario } from '../scenario';
 
 const MOVE_SPEED = 5;
+
+interface MarkerParts
+{
+    readonly shape: GameObjects.Arc | GameObjects.Rectangle;
+    readonly label: GameObjects.Text;
+}
+
+interface TreasureMarker
+{
+    readonly cell: Cell;
+    readonly parts: MarkerParts;
+}
 
 const COLORS = {
     floor: 0x2f333b,
@@ -49,12 +62,24 @@ export class Game extends Scene
     private currentPath: Cell[] = [];
     private waypoints: Cell[] = [];
     private waypointIndex = 0;
+    private pathIndex = 0;
     private moving = false;
+    private hasKey = false;
+    private doorOpen = false;
+    private gameWon = false;
+    private treasuresCollected = 0;
+    private collectedTreasures = new Set<string>();
+    private treasureMarkers: TreasureMarker[] = [];
+    private keyMarker!: MarkerParts;
+    private doorMarker!: MarkerParts;
     private routeGraphics!: GameObjects.Graphics;
     private algorithmLabel!: GameObjects.Text;
     private algorithmBadge!: GameObjects.Text;
     private navigationLabel!: GameObjects.Text;
     private navigationBadge!: GameObjects.Text;
+    private keyBadge!: GameObjects.Text;
+    private doorBadge!: GameObjects.Text;
+    private treasureBadge!: GameObjects.Text;
     private guardButton!: GameObjects.Text;
     private controlsText!: GameObjects.Text;
     private messageText!: GameObjects.Text;
@@ -73,7 +98,14 @@ export class Game extends Scene
         this.currentPath = [];
         this.waypoints = [];
         this.waypointIndex = 0;
+        this.pathIndex = 0;
         this.moving = false;
+        this.hasKey = false;
+        this.doorOpen = false;
+        this.gameWon = false;
+        this.treasuresCollected = 0;
+        this.collectedTreasures = new Set<string>();
+        this.treasureMarkers = [];
         this.messageTimer = undefined;
     }
 
@@ -177,14 +209,19 @@ export class Game extends Scene
 
     private drawScenarioElements ()
     {
-        this.addScenarioMarker(this.scenario.door, COLORS.door, 'P', 'square', CELL_SIZE * 0.92, 1);
+        this.doorMarker = this.addScenarioMarker(
+            this.scenario.door, COLORS.door, 'P', 'square', CELL_SIZE * 0.92, 1
+        );
 
-        this.addScenarioMarker(this.scenario.key, COLORS.key, 'L', 'circle', CELL_SIZE * 0.5);
+        this.keyMarker = this.addScenarioMarker(
+            this.scenario.key, COLORS.key, 'L', 'circle', CELL_SIZE * 0.5
+        );
         this.addScenarioMarker(this.scenario.exit, COLORS.exit, 'S', 'square', CELL_SIZE * 0.72);
 
-        this.scenario.treasures.forEach((treasure) => {
-            this.addScenarioMarker(treasure, COLORS.treasure, 'T', 'square', CELL_SIZE * 0.58);
-        });
+        this.treasureMarkers = this.scenario.treasures.map((treasure) => ({
+            cell: treasure,
+            parts: this.addScenarioMarker(treasure, COLORS.treasure, 'T', 'square', CELL_SIZE * 0.58)
+        }));
 
         this.scenario.hidingSpots.forEach((hidingSpot) => {
             this.addScenarioMarker(hidingSpot, COLORS.hiding, 'E', 'circle', CELL_SIZE * 0.58, 0.65);
@@ -202,7 +239,7 @@ export class Game extends Scene
         shape: 'square' | 'circle',
         size: number,
         alpha = 0.85
-    )
+    ): MarkerParts
     {
         const position = cellToWorld(cell);
         const marker: GameObjects.Arc | GameObjects.Rectangle = shape === 'circle'
@@ -211,11 +248,13 @@ export class Game extends Scene
 
         marker.setStrokeStyle(2, 0x111318, 0.9).setDepth(1);
 
-        this.add.text(position.x, position.y, label, {
+        const text = this.add.text(position.x, position.y, label, {
             fontFamily: 'Arial Black, Arial, sans-serif',
             fontSize: '16px',
             color: '#111318'
         }).setOrigin(0.5).setDepth(2);
+
+        return { shape: marker, label: text };
     }
 
     private drawHud ()
@@ -256,6 +295,33 @@ export class Game extends Scene
             padding: { left: 10, right: 10, top: 1, bottom: 1 }
         }).setOrigin(0, 0.5).setDepth(10);
 
+        this.keyBadge = this.add.text(14, 50, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#e6e9ef',
+            backgroundColor: '#59606d',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(0, 0.5).setDepth(10);
+
+        this.doorBadge = this.add.text(14, 70, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#111318',
+            backgroundColor: '#ffb4a2',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(0, 0.5).setDepth(10);
+
+        this.treasureBadge = this.add.text(1004, 70, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#111318',
+            backgroundColor: '#ff9f43',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(1, 0.5).setDepth(10);
+
         this.guardButton = this.add.text(1004, 50, '', {
             fontFamily: 'Arial, sans-serif',
             fontSize: '15px',
@@ -294,6 +360,10 @@ export class Game extends Scene
         this.navigationBadge.setText(this.navigationMode === 'cells' ? 'Por celdas' : 'Suavizada');
         this.guardButton.setText(`Guardias: ${this.guardCount}`);
 
+        this.keyBadge.setText(this.hasKey ? 'Llave: sí' : 'Llave: no');
+        this.doorBadge.setText(this.doorOpen ? 'Puerta: abierta' : 'Puerta: cerrada');
+        this.treasureBadge.setText(`Tesoros: ${this.treasuresCollected} / ${this.scenario.treasures.length}`);
+
         const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
         const algorithmStartX = 512 - algorithmWidth / 2;
 
@@ -305,6 +375,28 @@ export class Game extends Scene
 
         this.navigationLabel.setPosition(navigationStartX, 70);
         this.navigationBadge.setPosition(navigationStartX + this.navigationLabel.width + gap, 70);
+
+        if (this.doorOpen)
+        {
+            this.doorBadge.setBackgroundColor('#7ee787');
+            this.doorBadge.setColor('#111318');
+        }
+        else
+        {
+            this.doorBadge.setBackgroundColor('#ffb4a2');
+            this.doorBadge.setColor('#111318');
+        }
+
+        if (this.hasKey)
+        {
+            this.keyBadge.setBackgroundColor('#ffd166');
+            this.keyBadge.setColor('#111318');
+        }
+        else
+        {
+            this.keyBadge.setBackgroundColor('#59606d');
+            this.keyBadge.setColor('#e6e9ef');
+        }
 
         this.controlsText.setText(
             `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  N: navegación  |  P: ruta  |  R: nueva partida`
@@ -349,7 +441,7 @@ export class Game extends Scene
 
     private handlePointerDown (pointer: Input.Pointer)
     {
-        if (pointer.y < GRID_Y)
+        if (pointer.y < GRID_Y || this.gameWon)
         {
             return;
         }
@@ -362,10 +454,15 @@ export class Game extends Scene
             return;
         }
 
-        if (cellsEqual(target, this.scenario.door))
+        if (!this.doorOpen && cellsEqual(target, this.scenario.door))
         {
-            this.showMessage('La puerta está cerrada.');
-            return;
+            if (!this.hasKey)
+            {
+                this.showMessage('La puerta está cerrada. Necesitás la llave.');
+                return;
+            }
+
+            this.openDoor();
         }
 
         if (!isWalkable(target))
@@ -382,7 +479,13 @@ export class Game extends Scene
             return;
         }
 
-        const path = findPath(origin, target, this.algorithm);
+        let path = findPath(origin, target, this.algorithm);
+
+        if (!path && !this.doorOpen && this.hasKey)
+        {
+            this.openDoor();
+            path = findPath(origin, target, this.algorithm);
+        }
 
         if (!path)
         {
@@ -404,10 +507,126 @@ export class Game extends Scene
         this.currentPath = path;
         this.waypoints = buildWaypoints(path, this.navigationMode);
         this.waypointIndex = 1;
+        this.pathIndex = 0;
         this.moving = true;
 
         this.drawRoute();
         this.moveToNextWaypoint();
+    }
+
+    private openDoor ()
+    {
+        if (this.doorOpen)
+        {
+            return;
+        }
+
+        const { col, row } = this.scenario.door;
+        const updatedRow = this.scenario.map[row].split('');
+
+        updatedRow[col] = '.';
+        this.scenario.map[row] = updatedRow.join('');
+        setActiveMap(this.scenario.map);
+
+        this.doorOpen = true;
+
+        this.doorMarker.shape.setFillStyle(COLORS.exit, 0.35);
+        this.doorMarker.shape.setStrokeStyle(2, COLORS.exit, 0.9);
+        this.doorMarker.label.setText('A').setColor('#c9ffd3');
+
+        this.showMessage('Abriste la puerta.');
+        this.updateHud();
+    }
+
+    private findPathIndex (cell: Cell): number
+    {
+        for (let index = this.pathIndex; index < this.currentPath.length; index++)
+        {
+            if (cellsEqual(this.currentPath[index], cell))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private resolveTraversedCells (upToIndex: number)
+    {
+        if (upToIndex < 0)
+        {
+            return;
+        }
+
+        for (let index = this.pathIndex + 1; index <= upToIndex; index++)
+        {
+            this.resolveCell(this.currentPath[index]);
+
+            if (this.gameWon)
+            {
+                return;
+            }
+        }
+    }
+
+    private resolveCell (cell: Cell)
+    {
+        if (!this.hasKey && cellsEqual(cell, this.scenario.key))
+        {
+            this.hasKey = true;
+            this.keyMarker.shape.setVisible(false);
+            this.keyMarker.label.setVisible(false);
+            this.showMessage('Recogiste la llave.');
+            this.updateHud();
+        }
+
+        const treasure = this.scenario.treasures.find((item) => {
+            return cellsEqual(item, cell) && !this.collectedTreasures.has(cellKey(item));
+        });
+
+        if (treasure)
+        {
+            const key = cellKey(treasure);
+            const marker = this.treasureMarkers.find((item) => cellsEqual(item.cell, treasure));
+
+            this.collectedTreasures.add(key);
+            this.treasuresCollected++;
+            marker?.parts.shape.setVisible(false);
+            marker?.parts.label.setVisible(false);
+            this.showMessage(`Tesoro recogido (${this.treasuresCollected} de ${this.scenario.treasures.length}).`);
+            this.updateHud();
+        }
+
+        if (cellsEqual(cell, this.scenario.exit))
+        {
+            if (this.treasuresCollected > 0)
+            {
+                this.winGame();
+            }
+            else
+            {
+                this.showMessage('Necesitás al menos 1 tesoro para escapar.');
+            }
+        }
+    }
+
+    private winGame ()
+    {
+        this.gameWon = true;
+        this.moving = false;
+        this.tweens.killTweensOf(this.ladron);
+
+        this.currentPath = [];
+        this.waypoints = [];
+        this.waypointIndex = 0;
+        this.pathIndex = 0;
+        this.routeGraphics.clear();
+
+        this.showPersistentMessage(
+            `¡Victoria! Escapaste con ${this.treasuresCollected} tesoro(s). Presioná R para una nueva partida.`
+        );
+
+        this.updateHud();
     }
 
     private getCurrentCell (): Cell
@@ -430,6 +649,7 @@ export class Game extends Scene
         this.currentPath = [];
         this.waypoints = [];
         this.waypointIndex = 0;
+        this.pathIndex = 0;
         this.moving = false;
     }
 
@@ -457,8 +677,23 @@ export class Game extends Scene
             ease: 'Linear',
             onComplete: () => {
                 this.ladronCell = nextWaypoint;
+
+                const targetIndex = this.findPathIndex(nextWaypoint);
+
+                this.resolveTraversedCells(targetIndex);
+
+                if (targetIndex >= 0)
+                {
+                    this.pathIndex = targetIndex;
+                }
+
                 this.waypointIndex++;
                 this.drawRoute();
+
+                if (this.gameWon)
+                {
+                    return;
+                }
 
                 if (this.waypointIndex >= this.waypoints.length)
                 {
@@ -519,11 +754,19 @@ export class Game extends Scene
     {
         this.messageTimer?.remove(false);
 
-        this.messageText.setText(message);
+        this.messageText.setColor('#ffb4a2').setText(message);
 
         this.messageTimer = this.time.delayedCall(1800, () => {
             this.messageText.setText('');
             this.messageTimer = undefined;
         });
+    }
+
+    private showPersistentMessage (message: string)
+    {
+        this.messageTimer?.remove(false);
+        this.messageTimer = undefined;
+
+        this.messageText.setColor('#7ee787').setText(message);
     }
 }
