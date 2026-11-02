@@ -5,21 +5,52 @@
 - TP Final Integrador de PIAPC, individual.
 - Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. El plan de la Spec 02 está aprobado, pero su implementación todavía no comenzó.
-- `src/game/scenes/Game.ts` muestra una grilla fija de 17 × 13 con paredes, suelo, HUD base y reinicio con `R`.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 tiene el plan aprobado, pero todavía no está implementada.
+- El usuario va a commitear la Spec 02 y crear una rama nueva antes de empezar la Spec 03. No hacer commits, push ni crear ramas por cuenta propia. Al iniciar la próxima sesión, comprobar `git status` y `git branch --show-current`; si hay cambios sin commitear o la rama no es la esperada, preguntar antes de tocar código.
+- `src/game/scenes/Game.ts` muestra la grilla fija de 17 × 13, el ladrón, el HUD y el reinicio con `R`; `src/game/grid.ts` y `src/game/pathfinding.ts` contienen la grilla y las búsquedas BFS, DFS y A*.
+- La Spec 02 dejó el HUD con un badge verde para el algoritmo activo, la ruta recortándose al avanzar y desapareciendo al llegar, y los controles `1`/`2`/`3`, `P` y `R`.
+- Verificación de la Spec 02: `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron; la prueba CDP en Chrome headless no mostró errores; BFS y A* dieron caminos mínimos, DFS caminos válidos; se comprobaron clics inválidos, `P`, `R`, cancelación en movimiento y llegada.
 - No se creó la carpeta `specs/`; el documento acordado es `Specs.MD` en la raíz.
 
-## Próximo paso
+## Próximo paso: Spec 03 — Navegación
 
-La **Spec 01 — Grilla y escena** está terminada y aprobada. El plan de la **Spec 02 — Búsquedas y movimiento** también está aprobado y registrado en `Specs.MD`.
+**Estado:** plan aprobado por el usuario; implementación pendiente. No implementar nada de la Spec 03 sin leer antes `Specs.MD` y la sección 8 de `GDD.MD`.
 
-Antes de implementarla, el usuario hará el commit de la Spec 01 y creará una rama nueva. No implementar la Spec 02 hasta que esa rama esté creada y el usuario lo indique.
+**Objetivo:** agregar dos modos de navegación seleccionables con `N`, “Por celdas” y “Suavizada”, usando el mismo camino calculado por BFS, DFS o A*.
 
-Cuando corresponda:
+**Plan aprobado:**
 
-1. Implementar solo la Spec 02 según el enfoque acordado.
-2. Verificar typecheck, build, consola y comportamiento jugando.
-3. Esperar aprobación antes de pasar a la Spec 03.
+1. Agregar `navigationMode` con dos valores, `cells` y `smooth`, y reiniciarlo a `cells` en `init()`.
+2. Mantener `findPath` sin cambios. La navegación solo transforma el camino de celdas en waypoints.
+3. Crear `src/game/navigation.ts` (recomendado) con:
+   - `NavigationMode = 'cells' | 'smooth'`.
+   - `buildWaypoints(path, mode)`: en `cells` devuelve el camino completo; en `smooth` aplica string-pulling.
+   - `hasLineOfSight(a, b)`: muestrea la línea entre centros de celda y rechaza el segmento si alguna muestra cae en una celda no transitable.
+4. En `Game.ts`, mover al ladrón por waypoints y usar un índice de waypoint en lugar de mezclar índices de celdas. La duración de cada tramo debe ser proporcional a la distancia euclidiana: `distanciaEnCeldas * 1000 / MOVE_SPEED`, para que la velocidad total sea comparable entre modos.
+5. `N` alterna el modo y actualiza el HUD. Si hay un recorrido activo, cancelar en la celda actual, recalcular el mismo destino con el mismo algoritmo y el nuevo modo. Si no hay recorrido, solo cambia el modo.
+6. Mostrar el modo activo en el HUD. Se sugiere una segunda fila de label + badge alrededor de `y = 70` y mover los controles a `y = 88`, verificando que no se tape la grilla (`GRID_Y = 96`).
+7. `drawRoute` debe usar los waypoints activos: en “Por celdas” se ve el recorrido por centros de celda; en “Suavizada”, segmentos rectos. Mantener `P` y el recorte/desaparición progresiva.
+8. No modificar BFS, DFS, A*, el mapa ni el alcance de la Spec 03.
+
+**Cuidados de implementación:**
+
+- El suavizado nunca debe atravesar paredes. Muestrear con un paso menor o igual a `CELL_SIZE / 4` y ser conservador en esquinas y bordes.
+- No usar una duración fija por waypoint: los tramos suavizados pueden abarcar varias celdas.
+- Mantener separado el camino de búsqueda (`currentPath`) de los waypoints de movimiento (`waypoints`).
+- Al cambiar `N` en movimiento, evitar saltos grandes: usar `getCurrentCell()` para cancelar y recalcular.
+- Mantener la documentación y los mensajes del juego en español.
+- No agregar dependencias nuevas.
+
+**Verificación esperada:**
+
+1. Elegir un destino con BFS en “Por celdas” y confirmar que pasa por el centro de cada celda.
+2. Presionar `N`, repetir el mismo destino y comprobar que el recorrido se ve más recto y no cruza paredes.
+3. Repetir con A* y DFS.
+4. Confirmar que `N` no cambia el algoritmo activo.
+5. Comparar la duración total de ambos modos para un mismo destino.
+6. Probar `P`, `R`, clics inválidos, clic a mitad de recorrido y cambio de `N` durante el movimiento.
+7. Ejecutar `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`; si sigue disponible la prueba CDP temporal, adaptarla y volver a correrla.
+8. Al terminar, actualizar `Specs.MD` y este archivo. No commitear sin pedido explícito.
 
 ## Reglas de trabajo
 

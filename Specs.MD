@@ -17,8 +17,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | Spec | Estado | Depende de |
 |---|---|---|
 | 01 — Grilla y escena | Terminada | — |
-| 02 — Búsquedas y movimiento | Plan aprobado — pendiente de implementación | 01 |
-| 03 — Navegación | Pendiente | 02 |
+| 02 — Búsquedas y movimiento | Terminada | 01 |
+| 03 — Navegación | Pendiente — plan aprobado | 02 |
 | 04 — Escenarios variables | Pendiente | 02 |
 | 05 — Interacción y victoria | Pendiente | 04 |
 | 06 — Percepción | Pendiente | 05 |
@@ -74,7 +74,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 - Mover celda a celda con velocidad constante de 5 celdas por segundo.
 - Mostrar la ruta por defecto como línea con puntos sobre las celdas.
 - Rechazar clics inválidos con un aviso breve y recalcular si se hace clic mientras se mueve.
-- No implementar todavía: primero el usuario hará el commit de la Spec 01 y creará una rama nueva.
+- Resaltar el algoritmo activo con un badge de color en el HUD.
+- Recortar la ruta a medida que el ladrón avanza y hacerla desaparecer al completar el recorrido.
 
 **Cómo comprobarla jugando:**
 1. Probar un mismo destino con BFS, DFS y A* y comparar visualmente las rutas.
@@ -82,6 +83,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 3. Hacer clic en una pared y en una celda aislada; verificar que el movimiento se rechaza.
 4. Iniciar un recorrido largo, hacer clic en otro destino a mitad de camino y comprobar que la ruta cambia desde la posición actual.
 5. Ocultar y mostrar la ruta con `P`.
+6. Confirmar que el HUD resalta el algoritmo activo y que la ruta se recorta y desaparece al llegar.
 
 ---
 
@@ -100,11 +102,21 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Persecución directa, campos de flujo, steering, movimiento libre y cambios al algoritmo de búsqueda.
 
+**Enfoque acordado (aprobado, pendiente de implementación):**
+- Mantener `findPath` sin cambios; la navegación solo transforma el camino de celdas en waypoints.
+- Agregar un modo `Por celdas` / `Suavizada`, seleccionable con `N` y visible en el HUD.
+- En `Suavizada`, aplicar string-pulling: conservar inicio y destino y eliminar waypoints intermedios cuando haya línea de visión directa.
+- Validar la línea de visión muestreando la grilla y rechazando cualquier segmento que toque una pared o celda bloqueada.
+- Mover al ladrón por waypoints con duración proporcional a la distancia recorrida, para que la velocidad total sea comparable entre modos.
+- Dibujar la ruta visible según el modo activo, manteniendo `P` y el recorte/desaparición progresiva.
+- Si se cambia de modo durante un recorrido, cancelar en la celda actual y recalcular el mismo destino con el nuevo modo.
+
 **Cómo comprobarla jugando:**
 1. Elegir un destino con BFS y observar el recorrido “Por celdas”.
 2. Presionar `N` y repetir el mismo destino; comprobar que el camino se ve más recto.
 3. Repetir con A* y DFS.
 4. Verificar que el modo suavizado nunca cruza una pared.
+5. Confirmar que `N` no cambia el algoritmo y que `P`, `R` y los clics inválidos siguen funcionando.
 
 ---
 
