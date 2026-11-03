@@ -9,11 +9,13 @@ const NEIGHBOR_OFFSETS: readonly Cell[] = [
     { col: -1, row: 0 }
 ];
 
-function getNeighbors (cell: Cell): Cell[]
+export type PassableCell = (cell: Cell) => boolean;
+
+function getNeighbors (cell: Cell, isPassable: PassableCell): Cell[]
 {
     return NEIGHBOR_OFFSETS
         .map((offset) => ({ col: cell.col + offset.col, row: cell.row + offset.row }))
-        .filter((neighbor) => isWalkable(neighbor));
+        .filter((neighbor) => isPassable(neighbor));
 }
 
 function reconstructPath (cameFrom: ReadonlyMap<string, Cell>, goal: Cell): Cell[]
@@ -34,7 +36,7 @@ function reconstructPath (cameFrom: ReadonlyMap<string, Cell>, goal: Cell): Cell
     return path;
 }
 
-function searchBfs (start: Cell, goal: Cell): Cell[] | null
+function searchBfs (start: Cell, goal: Cell, isPassable: PassableCell): Cell[] | null
 {
     const queue: Cell[] = [start];
     let head = 0;
@@ -51,7 +53,7 @@ function searchBfs (start: Cell, goal: Cell): Cell[] | null
             return reconstructPath(cameFrom, goal);
         }
 
-        for (const neighbor of getNeighbors(current))
+        for (const neighbor of getNeighbors(current, isPassable))
         {
             const key = cellKey(neighbor);
 
@@ -69,7 +71,7 @@ function searchBfs (start: Cell, goal: Cell): Cell[] | null
     return null;
 }
 
-function searchDfs (start: Cell, goal: Cell): Cell[] | null
+function searchDfs (start: Cell, goal: Cell, isPassable: PassableCell): Cell[] | null
 {
     const stack: Cell[] = [start];
     const visited = new Set<string>([cellKey(start)]);
@@ -84,7 +86,7 @@ function searchDfs (start: Cell, goal: Cell): Cell[] | null
             return reconstructPath(cameFrom, goal);
         }
 
-        const neighbors = getNeighbors(current);
+        const neighbors = getNeighbors(current, isPassable);
 
         for (let index = neighbors.length - 1; index >= 0; index--)
         {
@@ -110,7 +112,7 @@ function manhattanDistance (a: Cell, b: Cell): number
     return Math.abs(a.col - b.col) + Math.abs(a.row - b.row);
 }
 
-function searchAStar (start: Cell, goal: Cell): Cell[] | null
+function searchAStar (start: Cell, goal: Cell, isPassable: PassableCell): Cell[] | null
 {
     const open: Cell[] = [start];
     const openKeys = new Set<string>([cellKey(start)]);
@@ -149,7 +151,7 @@ function searchAStar (start: Cell, goal: Cell): Cell[] | null
         const currentKey = cellKey(current);
         const currentG = gScore.get(currentKey) ?? Infinity;
 
-        for (const neighbor of getNeighbors(current))
+        for (const neighbor of getNeighbors(current, isPassable))
         {
             const neighborKey = cellKey(neighbor);
             const tentativeG = currentG + 1;
@@ -174,9 +176,14 @@ function searchAStar (start: Cell, goal: Cell): Cell[] | null
     return null;
 }
 
-export function findPath (start: Cell, goal: Cell, algorithm: SearchAlgorithm): Cell[] | null
+export function findPathWithPassable (
+    start: Cell,
+    goal: Cell,
+    algorithm: SearchAlgorithm,
+    isPassable: PassableCell
+): Cell[] | null
 {
-    if (!isWalkable(start) || !isWalkable(goal))
+    if (!isPassable(start) || !isPassable(goal))
     {
         return null;
     }
@@ -188,13 +195,32 @@ export function findPath (start: Cell, goal: Cell, algorithm: SearchAlgorithm): 
 
     if (algorithm === 'BFS')
     {
-        return searchBfs(start, goal);
+        return searchBfs(start, goal, isPassable);
     }
 
     if (algorithm === 'DFS')
     {
-        return searchDfs(start, goal);
+        return searchDfs(start, goal, isPassable);
     }
 
-    return searchAStar(start, goal);
+    return searchAStar(start, goal, isPassable);
+}
+
+export function findPath (start: Cell, goal: Cell, algorithm: SearchAlgorithm): Cell[] | null
+{
+    return findPathWithPassable(start, goal, algorithm, isWalkable);
+}
+
+export function findGuardPath (
+    start: Cell,
+    goal: Cell,
+    algorithm: SearchAlgorithm,
+    door: Cell
+): Cell[] | null
+{
+    const isPassable: PassableCell = (cell) => {
+        return isWalkable(cell) || cellsEqual(cell, door);
+    };
+
+    return findPathWithPassable(start, goal, algorithm, isPassable);
 }

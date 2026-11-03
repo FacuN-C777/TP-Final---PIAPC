@@ -1,5 +1,5 @@
 import { Scene } from 'phaser';
-import type { GameObjects, Input, Time } from 'phaser';
+import type { GameObjects, Input, Time, Tweens } from 'phaser';
 import {
     CELL_SIZE,
     GRID_COLUMNS,
@@ -17,7 +17,7 @@ import {
     worldToCell,
     type Cell
 } from '../grid';
-import { findPath, type SearchAlgorithm } from '../pathfinding';
+import { findGuardPath, findPath, type SearchAlgorithm } from '../pathfinding';
 import { buildWaypoints, type NavigationMode } from '../navigation';
 import {
     HEARING_RANGE,
@@ -29,15 +29,34 @@ import {
     initialFacing,
     isHidingCell,
     updateGuardVision,
-    type GuardPerception,
     type NoiseEvent,
     type NoiseKind
 } from '../perception';
+import {
+    createGuardAgent,
+    updateGuardAgent,
+    type GuardAgent,
+    type GuardState
+} from '../guard';
 import { generateScenario, type GuardCount, type Scenario } from '../scenario';
 
 const MOVE_SPEED = 5;
+const GUARD_MOVE_SPEED = 4;
 const NOISE_NOTICE_MS = 1600;
 const NOISE_REDRAW_DELAY = NOISE_NOTICE_MS + 100;
+
+const GUARD_STATE_LABELS: Record<GuardState, string> = {
+    PATRULLA: 'P',
+    INVESTIGAR: 'I',
+    PERSEGUIR: 'PE'
+};
+
+const NEIGHBOR_OFFSETS: readonly Cell[] = [
+    { col: 0, row: -1 },
+    { col: 1, row: 0 },
+    { col: 0, row: 1 },
+    { col: -1, row: 0 }
+];
 
 interface MarkerParts
 {
@@ -88,19 +107,22 @@ export class Game extends Scene
     private hasKey = false;
     private doorOpen = false;
     private gameWon = false;
+    private gameLost = false;
     private treasuresCollected = 0;
     private collectedTreasures = new Set<string>();
     private treasureMarkers: TreasureMarker[] = [];
     private keyMarker!: MarkerParts;
     private doorMarker!: MarkerParts;
-    private guardPerceptions: GuardPerception[] = [];
+    private guardAgents: GuardAgent[] = [];
     private guardMarkers: MarkerParts[] = [];
+    private guardReachableCells: Cell[] = [];
     private lastPerceptionCellKey = '';
     private perceptionGraphics!: GameObjects.Graphics;
     private noiseMarker!: GameObjects.Arc;
     private noiseLabel!: GameObjects.Text;
     private noiseRedrawTimer?: Time.TimerEvent;
     private detectionBadge!: GameObjects.Text;
+    private guardStateBadge!: GameObjects.Text;
     private routeGraphics!: GameObjects.Graphics;
     private algorithmLabel!: GameObjects.Text;
     private algorithmBadge!: GameObjects.Text;
@@ -132,11 +154,13 @@ export class Game extends Scene
         this.hasKey = false;
         this.doorOpen = false;
         this.gameWon = false;
+        this.gameLost = false;
         this.treasuresCollected = 0;
         this.collectedTreasures = new Set<string>();
         this.treasureMarkers = [];
-        this.guardPerceptions = [];
+        this.guardAgents = [];
         this.guardMarkers = [];
+        this.guardReachableCells = [];
         this.lastPerceptionCellKey = '';
         this.noiseRedrawTimer = undefined;
         this.messageTimer = undefined;
@@ -175,7 +199,7 @@ export class Game extends Scene
             .setStrokeStyle(2, 0x111318, 1)
             .setDepth(4);
 
-        this.createGuardPerceptions();
+        this.createGuardAgents();
         this.drawHud();
         this.refreshPerception();
 
@@ -205,6 +229,18 @@ export class Game extends Scene
 
         this.input.keyboard?.on('keydown-R', () => {
             this.scene.restart();
+        });
+    }
+
+    update ()
+    {
+        if (this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        this.guardAgents.forEach((agent, index) => {
+            this.stepGuard(agent, index);
         });
     }
 
@@ -305,10 +341,54 @@ export class Game extends Scene
         return { shape: marker, label: text };
     }
 
-    private createGuardPerceptions ()
+    private createGuardAgents ()
     {
-        this.guardPerceptions = this.scenario.guards.map((guard) => {
-            return createGuardPerception(guard, initialFacing(guard, this.ladronCell));
+        this.guardAgents = this.scenario.guards.map((guard) => {
+            const perception = createGuardPerception(guard, initialFacing(guard, this.ladronCell));
+
+            return createGuardAgent(perception);
+        });
+
+        this.guardReachableCells = this.collectGuardReachableCells();
+    }
+
+    private collectGuardReachableCells (): Cell[]
+    {
+        const start = this.ladronCell;
+        const visited = new Set<string>([cellKey(start)]);
+        const queue: Cell[] = [start];
+        let head = 0;
+
+        while (head < queue.length)
+        {
+            const current = queue[head];
+            head++;
+
+            for (const offset of NEIGHBOR_OFFSETS)
+            {
+                const neighbor: Cell = {
+                    col: current.col + offset.col,
+                    row: current.row + offset.row
+                };
+                const key = cellKey(neighbor);
+
+                if (visited.has(key))
+                {
+                    continue;
+                }
+
+                if (!isWalkable(neighbor) && !cellsEqual(neighbor, this.scenario.door))
+                {
+                    continue;
+                }
+
+                visited.add(key);
+                queue.push(neighbor);
+            }
+        }
+
+        return queue.filter((cell) => {
+            return isWalkable(cell) && !cellsEqual(cell, this.scenario.door);
         });
     }
 
@@ -317,14 +397,15 @@ export class Game extends Scene
         const thiefCell = this.getCurrentCell();
         const thiefHidden = isHidingCell(thiefCell, this.scenario.hidingSpots);
 
-        this.guardPerceptions.forEach((perception) => {
-            updateGuardVision(perception, thiefCell, thiefHidden);
+        this.guardAgents.forEach((agent) => {
+            updateGuardVision(agent.perception, thiefCell, thiefHidden);
         });
 
         this.lastPerceptionCellKey = cellKey(thiefCell);
 
         this.drawPerception();
         this.updateHud();
+        this.checkDefeat();
     }
 
     private trackLadronCellChange ()
@@ -355,7 +436,8 @@ export class Game extends Scene
         const now = this.time.now;
         const halfAngle = (VISION_HALF_ANGLE * Math.PI) / 180;
 
-        this.guardPerceptions.forEach((perception, index) => {
+        this.guardAgents.forEach((agent, index) => {
+            const perception = agent.perception;
             const guardPosition = cellToWorld(perception.cell);
             const facingAngle = Math.atan2(perception.facing.row, perception.facing.col);
             const recentNoise = hasRecentNoise(perception, now, NOISE_NOTICE_MS);
@@ -428,8 +510,8 @@ export class Game extends Scene
             at: this.time.now
         };
 
-        this.guardPerceptions.forEach((perception) => {
-            applyNoise(perception, noise);
+        this.guardAgents.forEach((agent) => {
+            applyNoise(agent.perception, noise);
         });
 
         this.showNoiseNotice(origin);
@@ -530,6 +612,15 @@ export class Game extends Scene
             padding: { left: 8, right: 8, top: 2, bottom: 2 }
         }).setOrigin(0, 0.5).setDepth(10);
 
+        this.guardStateBadge = this.add.text(1004, 30, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '12px',
+            fontStyle: 'bold',
+            color: '#111318',
+            backgroundColor: '#ffb4a2',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(1, 0.5).setDepth(10);
+
         this.treasureBadge = this.add.text(1004, 70, '', {
             fontFamily: 'Arial, sans-serif',
             fontSize: '13px',
@@ -581,9 +672,9 @@ export class Game extends Scene
         this.doorBadge.setText(this.doorOpen ? 'Puerta: abierta' : 'Puerta: cerrada');
         this.treasureBadge.setText(`Tesoros: ${this.treasuresCollected} / ${this.scenario.treasures.length}`);
 
-        const anySees = this.guardPerceptions.some((perception) => perception.seesThief);
-        const anyNoise = this.guardPerceptions.some((perception) => {
-            return hasRecentNoise(perception, this.time.now, NOISE_NOTICE_MS);
+        const anySees = this.guardAgents.some((agent) => agent.perception.seesThief);
+        const anyNoise = this.guardAgents.some((agent) => {
+            return hasRecentNoise(agent.perception, this.time.now, NOISE_NOTICE_MS);
         });
 
         if (anySees)
@@ -603,6 +694,28 @@ export class Game extends Scene
             this.detectionBadge.setText('Detección: no');
             this.detectionBadge.setBackgroundColor('#59606d');
             this.detectionBadge.setColor('#e6e9ef');
+        }
+
+        const guardStates = this.guardAgents.map((agent) => {
+            return GUARD_STATE_LABELS[agent.state];
+        });
+
+        this.guardStateBadge.setText(`Guardias: ${guardStates.join(' · ')}`);
+
+        if (this.guardAgents.some((agent) => agent.state === 'PERSEGUIR'))
+        {
+            this.guardStateBadge.setBackgroundColor('#ff5c5c');
+            this.guardStateBadge.setColor('#111318');
+        }
+        else if (this.guardAgents.some((agent) => agent.state === 'INVESTIGAR'))
+        {
+            this.guardStateBadge.setBackgroundColor('#ffa94d');
+            this.guardStateBadge.setColor('#111318');
+        }
+        else
+        {
+            this.guardStateBadge.setBackgroundColor('#7ee787');
+            this.guardStateBadge.setColor('#111318');
         }
 
         const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
@@ -682,7 +795,7 @@ export class Game extends Scene
 
     private handlePointerDown (pointer: Input.Pointer)
     {
-        if (pointer.y < GRID_Y || this.gameWon)
+        if (pointer.y < GRID_Y || this.gameWon || this.gameLost)
         {
             return;
         }
@@ -805,7 +918,7 @@ export class Game extends Scene
         {
             this.resolveCell(this.currentPath[index]);
 
-            if (this.gameWon)
+            if (this.gameWon || this.gameLost)
             {
                 return;
             }
@@ -859,6 +972,7 @@ export class Game extends Scene
         this.gameWon = true;
         this.moving = false;
         this.tweens.killTweensOf(this.ladron);
+        this.stopGuardMovement();
 
         this.currentPath = [];
         this.waypoints = [];
@@ -871,6 +985,260 @@ export class Game extends Scene
         );
 
         this.updateHud();
+    }
+
+    private checkDefeat ()
+    {
+        if (this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        const thiefCell = this.getCurrentCell();
+        const caught = this.guardAgents.some((agent) => {
+            return cellsEqual(agent.perception.cell, thiefCell);
+        });
+
+        if (caught)
+        {
+            this.loseGame();
+        }
+    }
+
+    private loseGame ()
+    {
+        if (this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        this.gameLost = true;
+        this.moving = false;
+        this.stopGuardMovement();
+
+        // Diferido: la derrota puede dispararse desde el onUpdate del tween del ladrón.
+        this.time.delayedCall(0, () => {
+            this.tweens.killTweensOf(this.ladron);
+        });
+
+        this.currentPath = [];
+        this.waypoints = [];
+        this.waypointIndex = 0;
+        this.pathIndex = 0;
+        this.routeGraphics.clear();
+
+        this.showPersistentMessage(
+            'Derrota: un guardia te atrapó. Presioná R para una nueva partida.',
+            '#ff5c5c'
+        );
+
+        this.updateHud();
+    }
+
+    private stopGuardMovement ()
+    {
+        this.guardAgents.forEach((agent) => {
+            agent.moving = false;
+            agent.path = [];
+            agent.waypoints = [];
+            agent.waypointIndex = 0;
+        });
+
+        // Se capturan los tweens actuales y se detienen en diferido: esta función puede
+        // llamarse desde un callback de tween en curso, y no debe detener tweens nuevos.
+        const activeTweens: Tweens.Tween[] = [];
+
+        this.guardMarkers.forEach((marker) => {
+            activeTweens.push(...this.tweens.getTweensOf([ marker.shape, marker.label ]));
+        });
+
+        this.time.delayedCall(0, () => {
+            activeTweens.forEach((tween) => tween.stop());
+        });
+    }
+
+    private stepGuard (agent: GuardAgent, index: number)
+    {
+        if (this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        this.checkDefeat();
+
+        if (this.gameLost)
+        {
+            return;
+        }
+
+        const previousState = agent.state;
+        const action = updateGuardAgent(agent, {
+            now: this.time.now,
+            thiefCell: this.getCurrentCell(),
+            reachableCells: this.guardReachableCells,
+            random: Math.random
+        });
+
+        if (agent.state !== previousState)
+        {
+            this.updateHud();
+        }
+
+        if (action.type === 'move')
+        {
+            this.startGuardMove(agent, index, action.destination);
+        }
+        else if (action.type === 'observe' && agent.moving)
+        {
+            this.haltGuard(agent, index);
+        }
+    }
+
+    private haltGuard (agent: GuardAgent, index: number)
+    {
+        const marker = this.guardMarkers[index];
+
+        agent.moving = false;
+        agent.path = [];
+        agent.waypoints = [];
+        agent.waypointIndex = 0;
+
+        if (!marker)
+        {
+            return;
+        }
+
+        this.tweens.killTweensOf([ marker.shape, marker.label ]);
+
+        const position = cellToWorld(agent.perception.cell);
+
+        marker.shape.setPosition(position.x, position.y);
+        marker.label.setPosition(position.x, position.y);
+    }
+
+    private startGuardMove (agent: GuardAgent, index: number, destination: Cell)
+    {
+        const marker = this.guardMarkers[index];
+
+        if (!marker || this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        this.tweens.killTweensOf([ marker.shape, marker.label ]);
+
+        const path = findGuardPath(
+            agent.perception.cell,
+            destination,
+            this.algorithm,
+            this.scenario.door
+        );
+
+        if (!path || path.length <= 1)
+        {
+            agent.moving = false;
+            agent.destination = null;
+            agent.path = [];
+            agent.waypoints = [];
+            agent.waypointIndex = 0;
+
+            return;
+        }
+
+        agent.destination = { col: destination.col, row: destination.row };
+        agent.path = path;
+        agent.waypoints = buildWaypoints(path, this.navigationMode);
+        agent.waypointIndex = 1;
+        agent.moving = true;
+
+        this.moveGuardToNextWaypoint(agent, index);
+    }
+
+    private moveGuardToNextWaypoint (agent: GuardAgent, index: number)
+    {
+        if (this.gameWon || this.gameLost)
+        {
+            return;
+        }
+
+        const marker = this.guardMarkers[index];
+
+        if (!marker || agent.waypointIndex >= agent.waypoints.length)
+        {
+            agent.moving = false;
+
+            return;
+        }
+
+        const nextWaypoint = agent.waypoints[agent.waypointIndex];
+        const target = cellToWorld(nextWaypoint);
+
+        agent.perception.facing = initialFacing(agent.perception.cell, nextWaypoint);
+
+        const distanceInCells = Math.hypot(
+            (target.x - marker.shape.x) / CELL_SIZE,
+            (target.y - marker.shape.y) / CELL_SIZE
+        );
+        const duration = (distanceInCells * 1000) / GUARD_MOVE_SPEED;
+
+        this.tweens.add({
+            targets: [ marker.shape, marker.label ],
+            x: target.x,
+            y: target.y,
+            duration,
+            ease: 'Linear',
+            onUpdate: () => {
+                this.trackGuardCellChange(agent, index);
+            },
+            onComplete: () => {
+                if (this.gameWon || this.gameLost)
+                {
+                    return;
+                }
+
+                agent.perception.cell = nextWaypoint;
+                this.refreshPerception();
+
+                if (this.gameLost)
+                {
+                    return;
+                }
+
+                agent.waypointIndex++;
+
+                if (agent.waypointIndex >= agent.waypoints.length)
+                {
+                    agent.moving = false;
+                    agent.path = [];
+                    agent.waypoints = [];
+                    agent.waypointIndex = 0;
+
+                    return;
+                }
+
+                this.moveGuardToNextWaypoint(agent, index);
+            }
+        });
+    }
+
+    private trackGuardCellChange (agent: GuardAgent, index: number)
+    {
+        const marker = this.guardMarkers[index];
+
+        if (!marker)
+        {
+            return;
+        }
+
+        const cell = worldToCell(marker.shape.x, marker.shape.y);
+
+        if (!cell || cellsEqual(cell, agent.perception.cell))
+        {
+            return;
+        }
+
+        agent.perception.cell = cell;
+        this.refreshPerception();
     }
 
     private getCurrentCell (): Cell
@@ -938,10 +1306,15 @@ export class Game extends Scene
 
                 this.refreshPerception();
 
+                if (this.gameWon || this.gameLost)
+                {
+                    return;
+                }
+
                 this.waypointIndex++;
                 this.drawRoute();
 
-                if (this.gameWon)
+                if (this.gameWon || this.gameLost)
                 {
                     return;
                 }
@@ -1013,11 +1386,11 @@ export class Game extends Scene
         });
     }
 
-    private showPersistentMessage (message: string)
+    private showPersistentMessage (message: string, color = '#7ee787')
     {
         this.messageTimer?.remove(false);
         this.messageTimer = undefined;
 
-        this.messageText.setColor('#7ee787').setText(message);
+        this.messageText.setColor(color).setText(message);
     }
 }

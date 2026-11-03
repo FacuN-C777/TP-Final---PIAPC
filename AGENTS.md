@@ -5,10 +5,10 @@
 - TP Final Integrador de PIAPC, individual.
 - Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y aprobada por el usuario. La Spec 07 está planificada y pendiente de implementación.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y aprobada por el usuario. La Spec 07 está terminada y pendiente de aprobación del usuario.
 - El usuario maneja los commits, las ramas y el push. No hacer commits, push ni crear ramas por cuenta propia. Al iniciar cada sesión, comprobar `git status` y `git branch --show-current`; si hay cambios sin commitear o la rama no es la esperada, preguntar antes de tocar código.
-- La Spec 06 se commiteó en `cf990d9` y el usuario abrió la rama `seventh-Spec`. Esta sesión de planificación solo actualizó `Specs.MD` y `AGENTS.md`; no se tocó código. El usuario debe revisar y commitear la planificación antes de implementar la Spec 07.
-- `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` y `src/game/navigation.ts` contienen las búsquedas y el suavizado; `src/game/perception.ts` contiene la percepción pura del guardia.
+- La Spec 07 está implementada en la rama `seventh-Spec` sobre la planificación ya commiteada (`02538cd`). Quedan sin commitear `src/game/guard.ts` (nuevo), `src/game/pathfinding.ts`, `src/game/perception.ts`, `src/game/scenes/Game.ts`, `Specs.MD` y `AGENTS.md`; el usuario debe revisar y commitear.
+- `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, los guardias, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` (incluye `findGuardPath`, que trata la puerta cerrada como transitable) y `src/game/navigation.ts` contienen las búsquedas y el suavizado; `src/game/perception.ts` contiene la percepción pura del guardia; `src/game/guard.ts` contiene la FSM pura del guardia.
 - La Spec 02 dejó el HUD con un badge verde para el algoritmo activo, la ruta recortándose al avanzar y desapareciendo al llegar, y los controles `1`/`2`/`3`, `P` y `R`.
 - Verificación de la Spec 02: `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron; la prueba CDP en Chrome headless no mostró errores; BFS y A* dieron caminos mínimos, DFS caminos válidos; se comprobaron clics inválidos, `P`, `R`, cancelación en movimiento y llegada.
 - No se creó la carpeta `specs/`; el documento acordado es `Specs.MD` en la raíz.
@@ -33,35 +33,31 @@
 - Prueba programática con esbuild + Node sobre `perception.ts` (21 casos): cono, borde de 45°, fuera de ángulo/alcance, pared, puerta cerrada/abierta, escondite, ruido dentro/fuera y sin bloqueo por paredes, conservación de última posición, ruido que no pisa la memoria visual y orientación inicial.
 - Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar), 32 comprobaciones: detección y badge `vista`; pérdida de visión conservando la última posición; escondite dentro del cono con contraprueba; puerta cerrada/abierta; ruido, badge `ruido` y aviso temporal; `R` reinició percepciones, ruidos, llave y puerta; sin errores de consola ni excepciones.
 
-## Próximo paso: Spec 07 — FSM del guardia y derrota
+## Última spec implementada: Spec 07 — FSM del guardia y derrota
 
-**Estado:** planificada, pendiente de implementación en una sesión nueva. No implementar sin leer antes `Specs.MD` (Spec 07), las secciones 4, 5 y 6 de `GDD.MD` y esta guía.
+**Estado:** implementada y verificada; pendiente de aprobación del usuario.
 
-**Objetivo:** implementar la FSM del guardia (`PATRULLA`, `INVESTIGAR`, `PERSEGUIR`) usando la percepción de la Spec 06, moverlo con la búsqueda y navegación activas, permitir que cruce puertas cerradas y declarar derrota al alcanzar al ladrón.
+**Qué se hizo:**
 
-**Plan preparado:**
+- Nuevo `src/game/guard.ts` (sin Phaser): `GuardState` (`PATRULLA`, `INVESTIGAR`, `PERSEGUIR`), `GuardAgent`, `createGuardAgent`, `choosePatrolDestination` (aleatorio con `random` inyectable, excluye la celda actual) y `updateGuardAgent`, que devuelve `moverse`, `observar` o `idle`. `GUARD_OBSERVE_MS = 2000`.
+- Prioridades de `updateGuardAgent`: ver al ladrón → `PERSEGUIR` (ruido recibido en ese momento queda atendido sin cambiar de estado); al perderlo → `INVESTIGAR` en `lastKnownPosition`; ruido nuevo → `INVESTIGAR` en el origen; al llegar a investigar, observa 2 s y vuelve a `PATRULLA`; en `PATRULLA` elige un destino al azar al llegar.
+- `src/game/pathfinding.ts`: `findPathWithPassable` con predicado; `findPath` del ladrón sin cambios; `findGuardPath` trata la puerta como transitable.
+- `src/game/perception.ts`: `GuardPerception.cell` pasa a ser mutable para registrar el avance del guardia.
+- `Game.ts`: `guardAgents` reemplaza a `guardPerceptions`; `update()` avanza la FSM de cada guardia; movimiento con tweens por waypoints (velocidad 4 celdas/s, algoritmo y navegación activos); la orientación sigue el eje dominante del tramo; celdas de patrulla calculadas una vez por escenario con la puerta transitable; derrota (`gameLost`) si un guardia comparte celda con el ladrón, con mensaje rojo persistente y clics ignorados hasta `R`; badge `Guardias: P · I · PE` en la franja superior derecha.
+- Victoria también detiene a los guardias.
 
-- Crear `src/game/guard.ts` con la FSM pura y sin Phaser: `GuardState`, `GuardAgent` (`perception`, `state`, `destination`, `path`, `waypoints`, `waypointIndex`, `moving`, `observeUntil`, `handledNoiseAt`), creación del agente, elección aleatoria de destino de patrulla entre celdas alcanzables (excluyendo la actual), transiciones por visión/ruido/tiempo y acciones `moverse` / `observar` / `quieto`. `INVESTIGAR` observa unos 2 s y vuelve a `PATRULLA`. La función aleatoria se inyecta para testear.
-- Refactorizar `pathfinding.ts` para aceptar un predicado de transitabilidad y agregar `findGuardPath`, que trata la puerta cerrada como transitable; `findPath` del ladrón no cambia.
-- En `Game.ts`, crear un `GuardAgent` por guardia, mover el marcador con tweens por waypoints usando el algoritmo y la navegación activos, actualizar `perception.cell` y `perception.facing` (eje dominante del siguiente waypoint) y recalcular la percepción. Velocidad de guardia fija algo menor que la del ladrón (por ejemplo 4 celdas/s).
-- Calcular una vez por escenario las celdas alcanzables para patrulla con un flood que considere la puerta transitable.
-- Transiciones: ver al ladrón → `PERSEGUIR`; perderlo → `INVESTIGAR` en `lastKnownPosition`; ruido nuevo → `INVESTIGAR` en el origen salvo persecución; llegar a investigar y no encontrar nada → `PATRULLA`; en patrulla, al llegar elegir otro destino.
-- Derrota si un guardia comparte celda con el ladrón (al completar un tramo, al cambiar la celda redondeada durante el tween o al moverse el ladrón): marcar `gameLost`, detener tweens, limpiar la ruta, mostrar mensaje persistente e ignorar clics hasta `R`.
-- Agregar un badge compacto con el estado de cada guardia en la franja superior y conservar la visualización de percepción de la Spec 06.
+**Verificación realizada:**
 
-**Verificación prevista:**
+- `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
+- Prueba programática con esbuild + Node (63 casos): transiciones, observación y timeout, ruido atendido una sola vez, ruido durante persecución, destino de patrulla distinto del actual, puerta cerrada transitable para guardias y bloqueada para el ladrón (BFS, DFS y A*).
+- Prueba CDP con Chrome headless (38 comprobaciones, repetida tres veces con escenarios aleatorios): patrulla y cambio de destino, ruido → `INVESTIGAR`, observación y timeout, visión → `PERSEGUIR`, pérdida de visión → `INVESTIGAR`, derrota, `R` reinicia, 2 guardias, A* con suavizada, sin excepciones ni errores de consola. Exposición temporal de la escena retirada al terminar.
+- Se corrigieron dos fallos durante la verificación: tweens detenidos dentro de su propio callback (Phaser dejaba de actualizar todos los tweens) y cancelaciones diferidas que detenían tweens nuevos.
 
-1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
-2. Prueba programática con esbuild + Node sobre `guard.ts` y `findGuardPath`: transiciones, observación y timeout, ruido, última posición, destino de patrulla distinto del actual, puerta cerrada transitable para guardias y bloqueada para el ladrón.
-3. Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar): patrulla y cambio de destino, ruido → `INVESTIGAR`, visión → `PERSEGUIR`, pérdida de visión → `INVESTIGAR`, derrota al alcanzar, `R` reinicia, 1 y 2 guardias, sin errores de consola.
+**Notas para la próxima sesión:**
 
-**Antes de empezar:**
-
-1. Comprobar `git status` y `git branch --show-current`; preguntar si hay cambios sin commitear o la rama no es la esperada.
-2. Confirmar que el usuario pidió implementar la Spec 07 en esa sesión.
-3. Reutilizar `GuardPerception`, `seesThief`, `lastKnownPosition` y `lastNoise`; no duplicar la lógica de percepción.
-4. Mantener el alcance: sin tácticas coordinadas, GOAP, árboles de comportamiento, puntaje ni exploración de escondites.
-5. No agregar dependencias nuevas.
+- Un ladrón inmóvil dentro del cono de un guardia termina derrotado; es el comportamiento esperado.
+- Guardia más lento que el ladrón (4 vs 5 celdas/s): la persecución puede no alcanzar a un ladrón en movimiento.
+- Pendiente de la spec 08: ajustar textos y estilo del HUD para el estado de los guardias.
 
 ## Reglas de trabajo
 

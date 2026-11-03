@@ -24,7 +24,7 @@ export interface NoiseEvent
 
 export interface GuardPerception
 {
-    readonly cell: Cell;
+    cell: Cell;
     facing: Direction;
     seesThief: boolean;
     lastKnownPosition: Cell | null;

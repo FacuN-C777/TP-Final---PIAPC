@@ -22,7 +22,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 04 — Escenarios variables | Terminada — aprobada | 02 |
 | 05 — Interacción y victoria | Terminada — aprobada | 04 |
 | 06 — Percepción | Terminada — aprobada | 05 |
-| 07 — FSM del guardia y derrota | Planificada — pendiente de implementación | 06 |
+| 07 — FSM del guardia y derrota | Terminada — pendiente de aprobación | 06 |
 | 08 — UI final y pulido | Pendiente | 01–07 |
 | 09 — README y presentación | Pendiente | 08 |
 
@@ -307,7 +307,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Tácticas coordinadas entre guardias, GOAP, árboles de comportamiento, puntaje, búsqueda de escondites sospechosos y percepción realista del sonido.
 
-**Enfoque preparado (pendiente de implementación):**
+**Enfoque implementado:**
 - Crear `src/game/guard.ts` con la FSM pura, sin Phaser y verificable de forma programática:
   - `GuardState = 'PATRULLA' | 'INVESTIGAR' | 'PERSEGUIR'`.
   - `GuardAgent` con `perception`, `state`, `destination`, `path`, `waypoints`, `waypointIndex`, `moving`, `observeUntil` y `handledNoiseAt`.
@@ -335,11 +335,12 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
   - Mantener la visualización de percepción de la Spec 06.
 - No agregar dependencias nuevas.
 
-**Verificación esperada:**
-1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
-2. Prueba programática con esbuild + Node sobre `guard.ts` y `findGuardPath`: transiciones, observación y timeout, ruido, última posición, destino de patrulla distinto del actual, puerta cerrada transitable para guardias y bloqueada para el ladrón.
-3. Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar): patrulla y cambio de destino, ruido → `INVESTIGAR`, visión → `PERSEGUIR`, pérdida de visión → `INVESTIGAR`, derrota al alcanzar, `R` reinicia, 1 y 2 guardias, sin errores de consola.
-4. Actualizar `Specs.MD` y `AGENTS.md` al terminar.
+**Verificación realizada:**
+- `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
+- Prueba programática con esbuild + Node (63 casos): transiciones de `guard.ts` (patrulla, visión, pérdida de visión, ruido, observación y timeout, ruido atendido una sola vez, ruido durante persecución, ruido nuevo durante investigación, ruido en la celda actual); destino de patrulla distinto del actual; `findGuardPath` cruza la puerta cerrada con BFS, DFS y A*, mientras `findPath` del ladrón no la cruza; con la puerta abierta ambos la cruzan.
+- Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar), 38 comprobaciones, repetida tres veces con escenarios aleatorios: patrulla y cambio de destino; ruido → `INVESTIGAR` hacia el origen; llegada y observación; timeout → `PATRULLA`; visión → `PERSEGUIR`; pérdida de visión → `INVESTIGAR` hacia la última posición; derrota al alcanzar con ladrón y guardias detenidos; `R` reinicia y limpia la derrota; 2 guardias patrullan; A* con suavizada mueve al guardia; sin excepciones ni errores de consola.
+- Durante la verificación se corrigieron dos fallos: tweens cancelados dentro de su propio callback (Phaser dejaba de actualizar todos los tweens) y cancelaciones diferidas que detenían tweens nuevos.
+- Se comprobó además que un ladrón inmóvil dentro del cono de un guardia termina derrotado: es el comportamiento esperado.
 
 **Cómo comprobarla jugando:**
 1. Observar al guardia patrullar y comprobar que cambia de destino al llegar.
