@@ -19,9 +19,25 @@ import {
 } from '../grid';
 import { findPath, type SearchAlgorithm } from '../pathfinding';
 import { buildWaypoints, type NavigationMode } from '../navigation';
+import {
+    HEARING_RANGE,
+    VISION_HALF_ANGLE,
+    VISION_RANGE,
+    applyNoise,
+    createGuardPerception,
+    hasRecentNoise,
+    initialFacing,
+    isHidingCell,
+    updateGuardVision,
+    type GuardPerception,
+    type NoiseEvent,
+    type NoiseKind
+} from '../perception';
 import { generateScenario, type GuardCount, type Scenario } from '../scenario';
 
 const MOVE_SPEED = 5;
+const NOISE_NOTICE_MS = 1600;
+const NOISE_REDRAW_DELAY = NOISE_NOTICE_MS + 100;
 
 interface MarkerParts
 {
@@ -47,7 +63,12 @@ const COLORS = {
     treasure: 0xff9f43,
     exit: 0x7ee787,
     hiding: 0xb388ff,
-    guard: 0xff5c5c
+    guard: 0xff5c5c,
+    vision: 0x4dd6a8,
+    visionAlert: 0xff5c5c,
+    hearing: 0x8a9bff,
+    lastKnown: 0xffd166,
+    noise: 0xffa94d
 };
 
 export class Game extends Scene
@@ -72,6 +93,14 @@ export class Game extends Scene
     private treasureMarkers: TreasureMarker[] = [];
     private keyMarker!: MarkerParts;
     private doorMarker!: MarkerParts;
+    private guardPerceptions: GuardPerception[] = [];
+    private guardMarkers: MarkerParts[] = [];
+    private lastPerceptionCellKey = '';
+    private perceptionGraphics!: GameObjects.Graphics;
+    private noiseMarker!: GameObjects.Arc;
+    private noiseLabel!: GameObjects.Text;
+    private noiseRedrawTimer?: Time.TimerEvent;
+    private detectionBadge!: GameObjects.Text;
     private routeGraphics!: GameObjects.Graphics;
     private algorithmLabel!: GameObjects.Text;
     private algorithmBadge!: GameObjects.Text;
@@ -106,6 +135,10 @@ export class Game extends Scene
         this.treasuresCollected = 0;
         this.collectedTreasures = new Set<string>();
         this.treasureMarkers = [];
+        this.guardPerceptions = [];
+        this.guardMarkers = [];
+        this.lastPerceptionCellKey = '';
+        this.noiseRedrawTimer = undefined;
         this.messageTimer = undefined;
     }
 
@@ -121,6 +154,19 @@ export class Game extends Scene
         this.drawGrid();
         this.drawScenarioElements();
 
+        this.perceptionGraphics = this.add.graphics().setDepth(2.5);
+
+        this.noiseMarker = this.add.circle(0, 0, CELL_SIZE * 0.45, COLORS.noise, 0.18)
+            .setStrokeStyle(2, COLORS.noise, 0.9)
+            .setVisible(false)
+            .setDepth(2.6);
+
+        this.noiseLabel = this.add.text(0, 0, 'Ruido', {
+            fontFamily: 'Arial Black, Arial, sans-serif',
+            fontSize: '12px',
+            color: '#ffd7a8'
+        }).setOrigin(0.5).setVisible(false).setDepth(2.7);
+
         this.routeGraphics = this.add.graphics().setDepth(3);
 
         const start = cellToWorld(this.ladronCell);
@@ -129,7 +175,9 @@ export class Game extends Scene
             .setStrokeStyle(2, 0x111318, 1)
             .setDepth(4);
 
+        this.createGuardPerceptions();
         this.drawHud();
+        this.refreshPerception();
 
         this.input.on('pointerdown', (pointer: Input.Pointer) => {
             this.handlePointerDown(pointer);
@@ -227,8 +275,8 @@ export class Game extends Scene
             this.addScenarioMarker(hidingSpot, COLORS.hiding, 'E', 'circle', CELL_SIZE * 0.58, 0.65);
         });
 
-        this.scenario.guards.forEach((guard) => {
-            this.addScenarioMarker(guard, COLORS.guard, 'G', 'circle', CELL_SIZE * 0.62);
+        this.guardMarkers = this.scenario.guards.map((guard) => {
+            return this.addScenarioMarker(guard, COLORS.guard, 'G', 'circle', CELL_SIZE * 0.62);
         });
     }
 
@@ -255,6 +303,166 @@ export class Game extends Scene
         }).setOrigin(0.5).setDepth(2);
 
         return { shape: marker, label: text };
+    }
+
+    private createGuardPerceptions ()
+    {
+        this.guardPerceptions = this.scenario.guards.map((guard) => {
+            return createGuardPerception(guard, initialFacing(guard, this.ladronCell));
+        });
+    }
+
+    private refreshPerception ()
+    {
+        const thiefCell = this.getCurrentCell();
+        const thiefHidden = isHidingCell(thiefCell, this.scenario.hidingSpots);
+
+        this.guardPerceptions.forEach((perception) => {
+            updateGuardVision(perception, thiefCell, thiefHidden);
+        });
+
+        this.lastPerceptionCellKey = cellKey(thiefCell);
+
+        this.drawPerception();
+        this.updateHud();
+    }
+
+    private trackLadronCellChange ()
+    {
+        const thiefCell = this.getCurrentCell();
+
+        if (cellKey(thiefCell) === this.lastPerceptionCellKey)
+        {
+            return;
+        }
+
+        this.refreshPerception();
+    }
+
+    private drawPerception ()
+    {
+        const graphics = this.perceptionGraphics;
+
+        if (!graphics)
+        {
+            return;
+        }
+
+        graphics.clear();
+
+        const thiefCell = this.getCurrentCell();
+        const thiefPosition = cellToWorld(thiefCell);
+        const now = this.time.now;
+        const halfAngle = (VISION_HALF_ANGLE * Math.PI) / 180;
+
+        this.guardPerceptions.forEach((perception, index) => {
+            const guardPosition = cellToWorld(perception.cell);
+            const facingAngle = Math.atan2(perception.facing.row, perception.facing.col);
+            const recentNoise = hasRecentNoise(perception, now, NOISE_NOTICE_MS);
+            const coneColor = perception.seesThief ? COLORS.visionAlert : COLORS.vision;
+
+            graphics.lineStyle(1.5, COLORS.hearing, 0.28);
+            graphics.strokeCircle(guardPosition.x, guardPosition.y, HEARING_RANGE * CELL_SIZE);
+
+            graphics.fillStyle(coneColor, perception.seesThief ? 0.16 : 0.09);
+            graphics.slice(
+                guardPosition.x,
+                guardPosition.y,
+                VISION_RANGE * CELL_SIZE,
+                facingAngle - halfAngle,
+                facingAngle + halfAngle,
+                false
+            );
+            graphics.fillPath();
+
+            graphics.lineStyle(1.5, coneColor, perception.seesThief ? 0.75 : 0.4);
+            graphics.strokePath();
+
+            if (perception.seesThief)
+            {
+                graphics.lineStyle(2, COLORS.visionAlert, 0.8);
+                graphics.lineBetween(
+                    guardPosition.x,
+                    guardPosition.y,
+                    thiefPosition.x,
+                    thiefPosition.y
+                );
+            }
+
+            if (perception.lastKnownPosition)
+            {
+                const known = cellToWorld(perception.lastKnownPosition);
+                const size = CELL_SIZE * 0.3;
+
+                graphics.lineStyle(2, COLORS.lastKnown, 0.85);
+                graphics.strokeRect(known.x - size, known.y - size, size * 2, size * 2);
+                graphics.lineBetween(known.x - size, known.y - size, known.x + size, known.y + size);
+                graphics.lineBetween(known.x + size, known.y - size, known.x - size, known.y + size);
+            }
+
+            const marker = this.guardMarkers[index];
+
+            if (marker)
+            {
+                if (perception.seesThief)
+                {
+                    marker.shape.setStrokeStyle(3, 0xffffff, 1);
+                }
+                else if (recentNoise)
+                {
+                    marker.shape.setStrokeStyle(3, COLORS.noise, 1);
+                }
+                else
+                {
+                    marker.shape.setStrokeStyle(2, 0x111318, 0.9);
+                }
+            }
+        });
+    }
+
+    private emitNoise (origin: Cell, kind: NoiseKind)
+    {
+        const noise: NoiseEvent = {
+            origin: { col: origin.col, row: origin.row },
+            kind,
+            at: this.time.now
+        };
+
+        this.guardPerceptions.forEach((perception) => {
+            applyNoise(perception, noise);
+        });
+
+        this.showNoiseNotice(origin);
+
+        this.noiseRedrawTimer?.remove(false);
+        this.noiseRedrawTimer = this.time.delayedCall(NOISE_REDRAW_DELAY, () => {
+            this.noiseRedrawTimer = undefined;
+            this.drawPerception();
+            this.updateHud();
+        });
+
+        this.drawPerception();
+        this.updateHud();
+    }
+
+    private showNoiseNotice (origin: Cell)
+    {
+        const position = cellToWorld(origin);
+
+        this.tweens.killTweensOf([ this.noiseMarker, this.noiseLabel ]);
+
+        this.noiseMarker.setPosition(position.x, position.y).setAlpha(1).setVisible(true);
+        this.noiseLabel.setPosition(position.x, position.y - CELL_SIZE * 0.55).setAlpha(1).setVisible(true);
+
+        this.tweens.add({
+            targets: [ this.noiseMarker, this.noiseLabel ],
+            alpha: 0,
+            duration: NOISE_NOTICE_MS,
+            onComplete: () => {
+                this.noiseMarker.setVisible(false);
+                this.noiseLabel.setVisible(false);
+            }
+        });
     }
 
     private drawHud ()
@@ -313,6 +521,15 @@ export class Game extends Scene
             padding: { left: 8, right: 8, top: 2, bottom: 2 }
         }).setOrigin(0, 0.5).setDepth(10);
 
+        this.detectionBadge = this.add.text(14, 30, '', {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#e6e9ef',
+            backgroundColor: '#59606d',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(0, 0.5).setDepth(10);
+
         this.treasureBadge = this.add.text(1004, 70, '', {
             fontFamily: 'Arial, sans-serif',
             fontSize: '13px',
@@ -363,6 +580,30 @@ export class Game extends Scene
         this.keyBadge.setText(this.hasKey ? 'Llave: sí' : 'Llave: no');
         this.doorBadge.setText(this.doorOpen ? 'Puerta: abierta' : 'Puerta: cerrada');
         this.treasureBadge.setText(`Tesoros: ${this.treasuresCollected} / ${this.scenario.treasures.length}`);
+
+        const anySees = this.guardPerceptions.some((perception) => perception.seesThief);
+        const anyNoise = this.guardPerceptions.some((perception) => {
+            return hasRecentNoise(perception, this.time.now, NOISE_NOTICE_MS);
+        });
+
+        if (anySees)
+        {
+            this.detectionBadge.setText('Detección: vista');
+            this.detectionBadge.setBackgroundColor('#ff5c5c');
+            this.detectionBadge.setColor('#111318');
+        }
+        else if (anyNoise)
+        {
+            this.detectionBadge.setText('Detección: ruido');
+            this.detectionBadge.setBackgroundColor('#ffa94d');
+            this.detectionBadge.setColor('#111318');
+        }
+        else
+        {
+            this.detectionBadge.setText('Detección: no');
+            this.detectionBadge.setBackgroundColor('#59606d');
+            this.detectionBadge.setColor('#e6e9ef');
+        }
 
         const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
         const algorithmStartX = 512 - algorithmWidth / 2;
@@ -535,6 +776,8 @@ export class Game extends Scene
         this.doorMarker.label.setText('A').setColor('#c9ffd3');
 
         this.showMessage('Abriste la puerta.');
+        this.refreshPerception();
+        this.emitNoise(this.scenario.door, 'door');
         this.updateHud();
     }
 
@@ -595,6 +838,7 @@ export class Game extends Scene
             marker?.parts.label.setVisible(false);
             this.showMessage(`Tesoro recogido (${this.treasuresCollected} de ${this.scenario.treasures.length}).`);
             this.updateHud();
+            this.emitNoise(treasure, 'treasure');
         }
 
         if (cellsEqual(cell, this.scenario.exit))
@@ -651,6 +895,8 @@ export class Game extends Scene
         this.waypointIndex = 0;
         this.pathIndex = 0;
         this.moving = false;
+
+        this.refreshPerception();
     }
 
     private moveToNextWaypoint ()
@@ -675,6 +921,9 @@ export class Game extends Scene
             y: target.y,
             duration,
             ease: 'Linear',
+            onUpdate: () => {
+                this.trackLadronCellChange();
+            },
             onComplete: () => {
                 this.ladronCell = nextWaypoint;
 
@@ -686,6 +935,8 @@ export class Game extends Scene
                 {
                     this.pathIndex = targetIndex;
                 }
+
+                this.refreshPerception();
 
                 this.waypointIndex++;
                 this.drawRoute();

@@ -20,8 +20,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 02 — Búsquedas y movimiento | Terminada | 01 |
 | 03 — Navegación | Terminada | 02 |
 | 04 — Escenarios variables | Terminada — aprobada | 02 |
-| 05 — Interacción y victoria | Terminada — pendiente de aprobación | 04 |
-| 06 — Percepción | Pendiente | 05 |
+| 05 — Interacción y victoria | Terminada — aprobada | 04 |
+| 06 — Percepción | Terminada — pendiente de aprobación | 05 |
 | 07 — FSM del guardia y derrota | Pendiente | 06 |
 | 08 — UI final y pulido | Pendiente | 01–07 |
 | 09 — README y presentación | Pendiente | 08 |
@@ -236,6 +236,48 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - FSM completa, patrulla, persecución, captura, propagación realista del sonido y exploración de varias celdas.
+
+**Enfoque implementado:**
+- Crear `src/game/perception.ts` con la lógica pura de percepción, separada de la escena y verificable sin Phaser:
+  - `VISION_RANGE = 5`, `VISION_HALF_ANGLE = 45` y `HEARING_RANGE = 6`.
+  - `GuardPerception` con `cell`, `facing`, `seesThief`, `lastKnownPosition` y `lastNoise`.
+  - `NoiseEvent` con `origin`, `kind` (`'door' | 'treasure'`) y momento del evento.
+  - Funciones para calcular la orientación inicial, comprobar distancia/ángulo, línea de visión, visión efectiva y audición.
+- Estado de guardias en `Game.ts`:
+  - Inicializar un `GuardPerception` por cada celda de `scenario.guards` en `create()` y reiniciarlo en `init()` y en cada nueva partida.
+  - Mientras no exista patrulla (Spec 07), cada guardia queda quieto con una orientación provisional determinística: mira hacia el inicio del ladrón por el eje de mayor diferencia (horizontal o vertical). No rota ni se mueve.
+- Visión:
+  - El ladrón debe estar a 5 celdas o menos (distancia euclidiana entre centros) y dentro de ±45° respecto de `facing`.
+  - La línea de visión se bloquea con paredes y con la puerta cerrada; se reutiliza el muestreo de línea de visión existente en `navigation.ts` sobre el mapa activo. Con la puerta abierta se puede ver a través de ella.
+  - Si el ladrón está en una celda de `scenario.hidingSpots`, `seesThief` siempre es `false`, aunque esté dentro del cono.
+  - Al detectar, actualizar `lastKnownPosition` con la celda actual del ladrón. Al dejar de verlo, conservar ese valor sin borrarlo.
+- Oído:
+  - `openDoor()` y la recolección de tesoros en `resolveCell()` emiten un `NoiseEvent` en esa celda.
+  - Cada guardia a 6 celdas o menos (distancia euclidiana) registra el origen en `lastNoise`; las paredes no bloquean el sonido.
+  - El ruido no pisa `lastKnownPosition`: son datos distintos y la FSM de la Spec 07 decidirá cómo usarlos.
+- Actualización:
+  - Recalcular la percepción al crear la escena, al abrir la puerta, al emitir un ruido y cuando cambie la celda del ladrón durante el recorrido.
+  - En navegación suavizada, evaluar también en `onUpdate` del tween al cambiar de celda redondeada, para no perder detecciones entre waypoints.
+- Visualización de depuración (visible durante la Spec 06):
+  - Cono de visión de 5 celdas y 90° con relleno translúcido; color distinto si el guardia ve al ladrón.
+  - Círculo de oído de 6 celdas solo con contorno.
+  - Línea desde el guardia al ladrón cuando lo ve.
+  - Marca persistente en la última posición conocida y aviso temporal en el origen del último ruido.
+  - Anillo del marcador del guardia resaltado cuando ve o cuando registra un ruido reciente, y badge `Detección: no / vista / ruido` en la franja superior.
+  - Mantener la visualización por debajo del HUD y con transparencia para no tapar la grilla.
+- No modificar `scenario.ts` (los guardias siguen siendo solo celdas), BFS/DFS/A*, el suavizado, la generación ni las reglas de victoria. No mover al guardia, no perseguir y no implementar derrota.
+
+**Verificación realizada:**
+- `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
+- Prueba programática con esbuild + Node sobre `perception.ts` (21 casos): dentro del cono, borde de 45°, fuera de ángulo, fuera de alcance, pared de por medio, puerta cerrada/abierta, escondite, ruido dentro/fuera del radio y sin bloqueo por paredes, conservación de la última posición, el ruido no pisa la memoria visual y orientación inicial por eje.
+- Prueba CDP con Chrome headless sobre `npm run dev-nolog`, con exposición temporal de la escena (retirada al terminar), 32 comprobaciones:
+  - detección dentro del cono, badge `vista` y última posición conocida guardada;
+  - pérdida de visión con conservación de la última posición;
+  - escondite dentro del cono sin detección y contraprueba fuera del escondite;
+  - puerta cerrada bloquea la visión, puerta abierta deja ver y genera ruido;
+  - ruido registrado, badge `ruido`, aviso temporal y desaparición posterior;
+  - `R` reinicia percepciones, ruidos, llave, puerta y avisos;
+  - sin errores de consola ni excepciones.
 
 **Cómo comprobarla jugando:**
 1. Pasar frente al guardia dentro del cono y confirmar la detección.

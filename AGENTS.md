@@ -5,53 +5,47 @@
 - TP Final Integrador de PIAPC, individual.
 - Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está implementada y verificada, pendiente de aprobación del usuario.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y pendiente de aprobación.
 - El usuario maneja los commits, las ramas y el push. No hacer commits, push ni crear ramas por cuenta propia. Al iniciar cada sesión, comprobar `git status` y `git branch --show-current`; si hay cambios sin commitear o la rama no es la esperada, preguntar antes de tocar código.
-- Al cierre de esta sesión, la implementación de la Spec 05 y estas actualizaciones de documentación quedaron sin commitear en la rama `fifth-Spec`. El usuario debe revisar, aprobar y commitear los cambios antes de implementar la Spec 06.
-- `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` y `src/game/navigation.ts` contienen las búsquedas y el suavizado.
+- La Spec 06 se implementó en la rama `sixth-Spec`, que ya contenía la planificación sin commitear. Al cierre, quedan modificados `AGENTS.md`, `Specs.MD`, `src/game/scenes/Game.ts` y el nuevo `src/game/perception.ts`; el usuario debe revisar y commitear. No se creó una rama nueva para la implementación por decisión explícita del usuario.
+- `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` y `src/game/navigation.ts` contienen las búsquedas y el suavizado; `src/game/perception.ts` contiene la percepción pura del guardia.
 - La Spec 02 dejó el HUD con un badge verde para el algoritmo activo, la ruta recortándose al avanzar y desapareciendo al llegar, y los controles `1`/`2`/`3`, `P` y `R`.
 - Verificación de la Spec 02: `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron; la prueba CDP en Chrome headless no mostró errores; BFS y A* dieron caminos mínimos, DFS caminos válidos; se comprobaron clics inválidos, `P`, `R`, cancelación en movimiento y llegada.
 - No se creó la carpeta `specs/`; el documento acordado es `Specs.MD` en la raíz.
 
-## Última spec implementada: Spec 05 — Interacción y victoria
+## Última spec implementada: Spec 06 — Percepción
 
 **Estado:** implementada, verificada y pendiente de aprobación del usuario.
 
 **Qué se hizo:**
 
-- `Game.ts` ahora mantiene `hasKey`, `doorOpen`, `gameWon`, `treasuresCollected`, `collectedTreasures` y `pathIndex`, reiniciados en `init()` y en cada “nueva partida”.
-- Las interacciones se resuelven al completar cada tramo de `currentPath` con `findPathIndex` y `resolveTraversedCells`, para no perder celdas intermedias en navegación suavizada.
-- La llave y los tesoros se recogen automáticamente, se ocultan sus marcadores y se actualiza el HUD; los tesoros extra no cambian la victoria.
-- La puerta sin llave rechaza el clic; con llave se abre al hacer clic en ella o al intentar cruzar, reemplazando `#` por `.` en `scenario.map`, llamando a `setActiveMap()` y cambiando el marcador a `A`.
-- La salida sin tesoros solo muestra un aviso; con al menos uno marca `gameWon`, detiene el tween, limpia la ruta, muestra un mensaje persistente e ignora clics hasta `R`.
-- El HUD suma badges de llave, puerta y tesoros (`recogidos / total`) en la franja superior, sin tapar la grilla.
-- No se modificaron la generación, BFS, DFS, A* ni el suavizado.
+- Nuevo `src/game/perception.ts` con lógica pura y sin Phaser: constantes `VISION_RANGE = 5`, `VISION_HALF_ANGLE = 45`, `HEARING_RANGE = 6`; tipos `GuardPerception`, `NoiseEvent` y `Direction`; helpers de orientación inicial, distancia, ángulo, cono, línea de visión, visión efectiva, audición y ruido reciente.
+- `Game.ts` crea una percepción por guardia desde `scenario.guards`, reiniciada en `init()` y en cada nueva partida. La orientación es provisional y determinística: mira hacia el inicio del ladrón por el eje de mayor diferencia; el guardia no se mueve ni rota.
+- La visión usa distancia euclidiana y ±45°, y reutiliza `hasLineOfSight` de `navigation.ts` sobre el mapa activo. Las paredes y la puerta cerrada bloquean; la puerta abierta deja ver; los escondites anulan la visión. Al ver, se guarda `lastKnownPosition`; al perder de vista, se conserva.
+- El oído registra ruidos de puerta y tesoro a 6 celdas o menos, sin bloqueo por paredes, en `lastNoise`; no pisa `lastKnownPosition`.
+- La percepción se recalcula al crear la escena, al abrir la puerta, al emitir ruido, al cambiar de celda durante el recorrido (incluido `onUpdate` del tween en suavizada) y al cancelar un movimiento.
+- Visualización de depuración: cono de 5 celdas y 90°, círculo de oído de 6 celdas, línea guardia → ladrón al ver, marca de última posición conocida, aviso temporal de ruido, anillo resaltado en el guardia y badge `Detección: no / vista / ruido` en la franja superior.
+- No se modificaron `scenario.ts`, BFS/DFS/A*, el suavizado, la generación ni las reglas de victoria.
 
 **Verificación realizada:**
 
 - `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron.
-- Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar): rechazo de puerta sin llave; recolección de llave con suavizada; apertura de puerta con `#` → `.`; aviso al tocar la salida sin tesoros; recolección de tesoro con HUD actualizado; victoria en la salida, ruta limpia y clics ignorados; `R` reinició llave, puerta, tesoros y marcadores; un waypoint posterior a la llave resolvió correctamente la celda intermedia; sin errores de consola.
+- Prueba programática con esbuild + Node sobre `perception.ts` (21 casos): cono, borde de 45°, fuera de ángulo/alcance, pared, puerta cerrada/abierta, escondite, ruido dentro/fuera y sin bloqueo por paredes, conservación de última posición, ruido que no pisa la memoria visual y orientación inicial.
+- Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar), 32 comprobaciones: detección y badge `vista`; pérdida de visión conservando la última posición; escondite dentro del cono con contraprueba; puerta cerrada/abierta; ruido, badge `ruido` y aviso temporal; `R` reinició percepciones, ruidos, llave y puerta; sin errores de consola ni excepciones.
 
-## Próximo paso: Spec 06 — Percepción
+## Próximo paso: Spec 07 — FSM del guardia y derrota
 
-**Estado:** pendiente. No implementar sin leer antes `Specs.MD` (Spec 06), las secciones 4, 5 y 6 de `GDD.MD` y esta guía.
+**Estado:** pendiente de planificación e implementación en una sesión nueva. No implementar sin leer antes `Specs.MD` (Spec 07), las secciones 4, 5 y 6 de `GDD.MD` y esta guía.
 
-**Objetivo:** implementar la percepción del guardia (visión en cono, línea de visión, oído por eventos y memoria de la última posición conocida) sin moverlo todavía.
+**Objetivo:** implementar la FSM del guardia (`PATRULLA`, `INVESTIGAR`, `PERSEGUIR`) usando la percepción de la Spec 06, moverlo con la búsqueda y navegación activas, permitir que cruce puertas cerradas y declarar derrota al alcanzar al ladrón.
 
 **Antes de empezar:**
 
-1. Comprobar `git status` y `git branch --show-current`; preguntar si hay cambios sin commitear o la rama no es la esperada. La Spec 05 debe estar aprobada y commiteada, y la sesión debe correr en una rama nueva.
-2. Confirmar que el usuario pidió implementar la Spec 06.
-3. Mantener el alcance: la FSM, patrulla, persecución y derrota quedan para la Spec 07.
-4. No agregar dependencias nuevas.
-
-**Puntos de partida:**
-
-- Visión de 5 celdas de alcance y 90°, bloqueada por paredes; un escondite anula la visión.
-- Oído de 6 celdas activado por la apertura de la puerta y la recolección de tesoros; los eventos ya ocurren en `Game.ts`.
-- Al perder de vista al ladrón, conservar su última posición conocida.
-- Mostrar una visualización de depuración del cono, el radio de oído, el estado de detección y la última posición conocida.
-- No mover al guardia ni iniciar persecución completa en esta spec.
+1. Comprobar `git status` y `git branch --show-current`; preguntar si hay cambios sin commitear o la rama no es la esperada.
+2. Confirmar que el usuario pidió implementar la Spec 07 en esa sesión.
+3. Reutilizar `GuardPerception`, `seesThief`, `lastKnownPosition` y `lastNoise`; no duplicar la lógica de percepción.
+4. Mantener el alcance: sin tácticas coordinadas, GOAP, árboles de comportamiento, puntaje ni exploración de escondites.
+5. No agregar dependencias nuevas.
 
 ## Reglas de trabajo
 
