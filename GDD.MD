@@ -22,11 +22,13 @@ El jugador no mueve al ladrón con WASD: hace clic en una celda alcanzable y el 
 | Acción | Control |
 |---|---|
 | Mover al ladrón | Clic en celda válida |
-| Elegir búsqueda | Teclas `1` BFS, `2` DFS, `3` A* |
-| Alternar navegación | Tecla `N` |
-| Mostrar/ocultar ruta | Tecla `P` |
-| Nueva partida | Tecla `R` |
-| Cantidad de guardias | Botón en pantalla: 1 o 2 |
+| Elegir búsqueda | Teclas `1` BFS, `2` DFS, `3` A* o botones en pantalla |
+| Alternar navegación | Tecla `N` o botones en pantalla |
+| Mostrar/ocultar ruta | Tecla `P` o botón en pantalla |
+| Nueva partida | Tecla `R` o botón en pantalla |
+| Cantidad de guardias | Botones en pantalla: 1 o 2 |
+
+Las selecciones de búsqueda, navegación, cantidad de guardias y ruta visible se conservan entre partidas.
 
 Un clic en pared, fuera de la grilla o en una zona inalcanzable se rechaza con un aviso breve. Un clic nuevo mientras el ladrón se mueve cancela la ruta anterior y recalcula desde la celda actual.
 
@@ -164,6 +166,7 @@ Ideas del borrador original que se recortaron para este prototipo. No forman par
 - La patrulla se recalcula según el escenario y no usa una ruta fija.
 - Se puede ganar y perder jugando en menos de dos minutos.
 - El prototipo inicia con `npm install` y `npm run dev`.
+- El juego se juega desde el navegador en un despliegue público (Vercel), sin instalación por parte del jugador.
 
 ## 13. Riesgos y mitigación
 
