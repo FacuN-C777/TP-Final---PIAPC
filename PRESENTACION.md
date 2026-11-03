@@ -2,7 +2,7 @@
 
 TP Final Integrador de PIAPC · Facundo Castillo · Prototipo individual en Phaser 4, Vite y TypeScript.
 
-**Jugar en el navegador:** `ENLACE_PENDIENTE_VERCEL`
+**Jugar en el navegador:** `https://tp-final-piapc.vercel.app`
 
 Duración orientativa: 10 minutos de exposición y 5 de demo.
 
@@ -144,7 +144,7 @@ PATRULLA/INVESTIGAR ──oye ruido──▶ INVESTIGAR (origen del ruido)
 
 Orden sugerido:
 
-1. Abrir el enlace de Vercel (`ENLACE_PENDIENTE_VERCEL`) en el navegador. Mostrar el HUD en tres filas y la leyenda inferior. Como plan B, si no hay conexión: `npm run dev-nolog` en local.
+1. Abrir el enlace de Vercel (`https://tp-final-piapc.vercel.app`) en el navegador. Mostrar el HUD en tres filas y la leyenda inferior. Como plan B, si no hay conexión: `npm run dev-nolog` en local.
 2. Elegir un destino con BFS y comparar con DFS y A* (teclas `1`, `2`, `3`). Mostrar `P` para ocultar la ruta.
 3. Pulsar `N` y repetir el mismo destino: el recorrido suavizado se ve más recto.
 4. Ir a la llave, abrir la puerta (se genera ruido) y recoger un tesoro. Mostrar el aviso de ruido y el estado `Investiga` si el guardia lo oye.
@@ -177,4 +177,4 @@ Del equipo o del tiempo disponible:
 
 - Qué se logró: un prototipo jugable con tres búsquedas (BFS, DFS y A*), dos navegaciones, percepción, FSM, escenarios variables y victoria y derrota completables.
 - Qué se aprendió sobre la IA: la percepción y la FSM se entienden mejor cuando se ven en pantalla (cono, memoria y estados).
-- Dónde están los materiales: juego jugable en `ENLACE_PENDIENTE_VERCEL`; `README.md` (instalación, controles y despliegue), `GDD.MD` (diseño), `Specs.MD` (specs y verificaciones).
+- Dónde están los materiales: juego jugable en `https://tp-final-piapc.vercel.app`; `README.md` (instalación, controles y despliegue), `GDD.MD` (diseño), `Specs.MD` (specs y verificaciones).

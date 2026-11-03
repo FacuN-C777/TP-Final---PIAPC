@@ -52,7 +52,8 @@
 
 **Pendientes:**
 
-- Cambio de alcance: el juego se juega desde el navegador en un despliegue de Vercel (GDD sección 12 y Spec 09 actualizadas). Crear el proyecto en Vercel (Build Command `npm run build-nolog`, Output Directory `dist`) y reemplazar `ENLACE_PENDIENTE_VERCEL` en `README.md` y `PRESENTACION.md`. Hasta entonces el marcador sigue en la documentación. No se creó `vercel.json` ni ningún archivo de configuración de Vercel.
+- Despliegue en Vercel realizado: `https://tp-final-piapc.vercel.app` (Build Command `npm run build-nolog`, Output Directory `dist`). El enlace está en `README.md` y `PRESENTACION.md`. No se creó `vercel.json`.
+- Comprobado: el sitio público responde 200 y contiene el título del juego. Falta jugar una partida en el sitio público (no se hizo desde esta sesión).
 - Repetir el clon limpio desde git tras el commit del usuario.
 - `package.json` conserva `repository`, `bugs`, `homepage` y `author` del template de Phaser. Pendiente de decisión.
 - Limitaciones propias de la presentación: completar la sección 12 de `PRESENTACION.md` durante la exposición.

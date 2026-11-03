@@ -8,11 +8,9 @@ Un ladrón entra a una casa, consigue la llave, abre la puerta, toma al menos un
 
 ## Jugar en el navegador
 
-**Enlace al juego:** `ENLACE_PENDIENTE_VERCEL`
+**Enlace al juego:** `https://tp-final-piapc.vercel.app`
 
 El juego se juega desde el navegador, sin instalar nada. Hace falta un navegador moderno.
-
-_Marcador: reemplazar `ENLACE_PENDIENTE_VERCEL` por la URL del despliegue en Vercel una vez creado._
 
 ## Requisitos
 
