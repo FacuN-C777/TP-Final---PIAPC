@@ -45,11 +45,46 @@ const GUARD_MOVE_SPEED = 4;
 const NOISE_NOTICE_MS = 1600;
 const NOISE_REDRAW_DELAY = NOISE_NOTICE_MS + 100;
 
-const GUARD_STATE_LABELS: Record<GuardState, string> = {
-    PATRULLA: 'P',
-    INVESTIGAR: 'I',
-    PERSEGUIR: 'PE'
+const CANVAS_WIDTH = 1024;
+const HUD_ROW_1_Y = 18;
+const HUD_ROW_2_Y = 48;
+const HUD_ROW_3_Y = 78;
+const HUD_MARGIN = 14;
+const HUD_GAP = 8;
+const LEGEND_Y = 734;
+const LEGEND_SWATCH = 16;
+const LEGEND_TEXT_GAP = 6;
+const LEGEND_ITEM_GAP = 18;
+const MESSAGE_Y = 758;
+const ACTIVE_BUTTON_COLOR = '#7cc6ff';
+const INACTIVE_BUTTON_COLOR = '#3a404c';
+
+const ALGORITHM_OPTIONS: readonly { readonly value: SearchAlgorithm; readonly label: string }[] = [
+    { value: 'BFS', label: 'BFS (1)' },
+    { value: 'DFS', label: 'DFS (2)' },
+    { value: 'A*', label: 'A* (3)' }
+];
+
+const NAVIGATION_OPTIONS: readonly { readonly value: NavigationMode; readonly label: string }[] = [
+    { value: 'cells', label: 'Por celdas' },
+    { value: 'smooth', label: 'Suavizada' }
+];
+
+const GUARD_COUNT_OPTIONS: readonly GuardCount[] = [ 1, 2 ];
+
+const GUARD_STATE_STYLE: Record<GuardState, { readonly label: string; readonly background: string; readonly color: string }> = {
+    PATRULLA: { label: 'Patrulla', background: '#59606d', color: '#e6e9ef' },
+    INVESTIGAR: { label: 'Investiga', background: '#ffa94d', color: '#111318' },
+    PERSEGUIR: { label: 'Persigue', background: '#ff5c5c', color: '#111318' }
 };
+
+interface LegendItem
+{
+    readonly label: string;
+    readonly shape: 'circle' | 'square' | 'cross';
+    readonly color: number;
+    readonly letter?: string;
+}
 
 const NEIGHBOR_OFFSETS: readonly Cell[] = [
     { col: 0, row: -1 },
@@ -75,18 +110,18 @@ const COLORS = {
     wall: 0x59606d,
     wallEdge: 0x7a8291,
     gridLine: 0x1c1f25,
-    route: 0x5ad1ff,
-    ladron: 0xf2c14e,
+    route: 0xffffff,
+    ladron: 0x40e0d0,
     key: 0xffd166,
     door: 0x9c6b3f,
     treasure: 0xff9f43,
     exit: 0x7ee787,
     hiding: 0xb388ff,
     guard: 0xff5c5c,
-    vision: 0x4dd6a8,
+    vision: 0xb0c4de,
     visionAlert: 0xff5c5c,
     hearing: 0x8a9bff,
-    lastKnown: 0xffd166,
+    lastKnown: 0xff8fd0,
     noise: 0xffa94d
 };
 
@@ -121,18 +156,21 @@ export class Game extends Scene
     private noiseMarker!: GameObjects.Arc;
     private noiseLabel!: GameObjects.Text;
     private noiseRedrawTimer?: Time.TimerEvent;
+    private gameStateBadge!: GameObjects.Text;
     private detectionBadge!: GameObjects.Text;
-    private guardStateBadge!: GameObjects.Text;
+    private guardStateBadges: GameObjects.Text[] = [];
     private routeGraphics!: GameObjects.Graphics;
-    private algorithmLabel!: GameObjects.Text;
-    private algorithmBadge!: GameObjects.Text;
-    private navigationLabel!: GameObjects.Text;
-    private navigationBadge!: GameObjects.Text;
     private keyBadge!: GameObjects.Text;
     private doorBadge!: GameObjects.Text;
     private treasureBadge!: GameObjects.Text;
-    private guardButton!: GameObjects.Text;
-    private controlsText!: GameObjects.Text;
+    private algorithmLabel!: GameObjects.Text;
+    private navigationLabel!: GameObjects.Text;
+    private guardLabel!: GameObjects.Text;
+    private algorithmButtons!: Map<SearchAlgorithm, GameObjects.Text>;
+    private navigationButtons!: Map<NavigationMode, GameObjects.Text>;
+    private guardCountButtons!: Map<GuardCount, GameObjects.Text>;
+    private routeButton!: GameObjects.Text;
+    private newGameButton!: GameObjects.Text;
     private messageText!: GameObjects.Text;
     private messageTimer?: Time.TimerEvent;
 
@@ -143,9 +181,7 @@ export class Game extends Scene
 
     init ()
     {
-        this.algorithm = 'BFS';
-        this.navigationMode = 'cells';
-        this.routeVisible = true;
+        // Algoritmo, navegación, cantidad de guardias y ruta visible se conservan entre partidas.
         this.currentPath = [];
         this.waypoints = [];
         this.waypointIndex = 0;
@@ -178,7 +214,13 @@ export class Game extends Scene
         this.drawGrid();
         this.drawScenarioElements();
 
+        // La visión y la audición se recortan a la grilla para no tapar la franja superior ni la leyenda.
+        const gridMaskShape = this.make.graphics({ x: 0, y: 0 }, false);
+
+        gridMaskShape.fillStyle(0xffffff).fillRect(GRID_X, GRID_Y, GRID_WIDTH, GRID_HEIGHT);
+
         this.perceptionGraphics = this.add.graphics().setDepth(2.5);
+        this.perceptionGraphics.setMask(gridMaskShape.createGeometryMask());
 
         this.noiseMarker = this.add.circle(0, 0, CELL_SIZE * 0.45, COLORS.noise, 0.18)
             .setStrokeStyle(2, COLORS.noise, 0.9)
@@ -228,7 +270,7 @@ export class Game extends Scene
         });
 
         this.input.keyboard?.on('keydown-R', () => {
-            this.scene.restart();
+            this.startNewGame();
         });
     }
 
@@ -549,128 +591,251 @@ export class Game extends Scene
 
     private drawHud ()
     {
-        this.add.text(512, 20, 'Asecho Nocturno', {
+        this.add.text(CANVAS_WIDTH / 2, HUD_ROW_1_Y, 'Asecho Nocturno', {
             fontFamily: 'Arial Black, Arial, sans-serif',
-            fontSize: '28px',
+            fontSize: '26px',
             color: '#f4f1e8'
         }).setOrigin(0.5).setDepth(10);
 
-        this.algorithmLabel = this.add.text(0, 50, 'Búsqueda actual:', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '15px',
-            color: '#aab2c0'
-        }).setOrigin(0, 0.5).setDepth(10);
+        this.gameStateBadge = this.createBadge('');
+        this.detectionBadge = this.createBadge('');
+        this.guardStateBadges = [ this.createBadge(''), this.createBadge('') ];
 
-        this.algorithmBadge = this.add.text(0, 50, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '16px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#7ee787',
-            padding: { left: 10, right: 10, top: 1, bottom: 1 }
-        }).setOrigin(0, 0.5).setDepth(10);
+        this.keyBadge = this.createBadge('');
+        this.doorBadge = this.createBadge('');
+        this.treasureBadge = this.createBadge('');
 
-        this.navigationLabel = this.add.text(0, 70, 'Navegación actual:', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '15px',
-            color: '#aab2c0'
-        }).setOrigin(0, 0.5).setDepth(10);
-
-        this.navigationBadge = this.add.text(0, 70, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '16px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#7cc6ff',
-            padding: { left: 10, right: 10, top: 1, bottom: 1 }
-        }).setOrigin(0, 0.5).setDepth(10);
-
-        this.keyBadge = this.add.text(14, 50, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#e6e9ef',
-            backgroundColor: '#59606d',
-            padding: { left: 8, right: 8, top: 2, bottom: 2 }
-        }).setOrigin(0, 0.5).setDepth(10);
-
-        this.doorBadge = this.add.text(14, 70, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#ffb4a2',
-            padding: { left: 8, right: 8, top: 2, bottom: 2 }
-        }).setOrigin(0, 0.5).setDepth(10);
-
-        this.detectionBadge = this.add.text(14, 30, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#e6e9ef',
-            backgroundColor: '#59606d',
-            padding: { left: 8, right: 8, top: 2, bottom: 2 }
-        }).setOrigin(0, 0.5).setDepth(10);
-
-        this.guardStateBadge = this.add.text(1004, 30, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '12px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#ffb4a2',
-            padding: { left: 8, right: 8, top: 2, bottom: 2 }
-        }).setOrigin(1, 0.5).setDepth(10);
-
-        this.treasureBadge = this.add.text(1004, 70, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#ff9f43',
-            padding: { left: 8, right: 8, top: 2, bottom: 2 }
-        }).setOrigin(1, 0.5).setDepth(10);
-
-        this.guardButton = this.add.text(1004, 50, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '15px',
-            fontStyle: 'bold',
-            color: '#111318',
-            backgroundColor: '#ffb4a2',
-            padding: { left: 10, right: 10, top: 2, bottom: 2 }
-        }).setOrigin(1, 0.5).setDepth(10).setInteractive({ useHandCursor: true });
-
-        this.guardButton.on('pointerdown', () => {
-            this.guardCount = this.guardCount === 1 ? 2 : 1;
-            this.scene.restart();
+        this.algorithmLabel = this.createHudText('Búsqueda:');
+        this.algorithmButtons = new Map();
+        ALGORITHM_OPTIONS.forEach((option) => {
+            this.algorithmButtons.set(option.value, this.createButton(option.label, () => {
+                this.setAlgorithm(option.value);
+            }));
         });
 
-        this.controlsText = this.add.text(512, 88, '', {
-            fontFamily: 'Arial, sans-serif',
-            fontSize: '13px',
-            color: '#aab2c0'
-        }).setOrigin(0.5).setDepth(10);
+        this.navigationLabel = this.createHudText('Navegación (N):');
+        this.navigationButtons = new Map();
+        NAVIGATION_OPTIONS.forEach((option) => {
+            this.navigationButtons.set(option.value, this.createButton(option.label, () => {
+                this.setNavigationMode(option.value);
+            }));
+        });
 
-        this.messageText = this.add.text(512, 744, '', {
+        this.guardLabel = this.createHudText('Guardias:');
+        this.guardCountButtons = new Map();
+        GUARD_COUNT_OPTIONS.forEach((count) => {
+            this.guardCountButtons.set(count, this.createButton(String(count), () => {
+                this.setGuardCount(count);
+            }));
+        });
+
+        this.routeButton = this.createButton('', () => {
+            this.toggleRoute();
+        });
+
+        this.newGameButton = this.createButton('Nueva partida (R)', () => {
+            this.startNewGame();
+        });
+
+        this.drawLegend();
+
+        this.messageText = this.add.text(CANVAS_WIDTH / 2, MESSAGE_Y, '', {
             fontFamily: 'Arial, sans-serif',
-            fontSize: '16px',
+            fontSize: '15px',
             color: '#ffb4a2'
         }).setOrigin(0.5).setDepth(10);
 
         this.updateHud();
     }
 
+    private createBadge (text: string): GameObjects.Text
+    {
+        return this.add.text(0, 0, text, {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#e6e9ef',
+            backgroundColor: '#59606d',
+            padding: { left: 8, right: 8, top: 2, bottom: 2 }
+        }).setOrigin(0, 0.5).setDepth(10);
+    }
+
+    private createHudText (text: string): GameObjects.Text
+    {
+        return this.add.text(0, 0, text, {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '14px',
+            color: '#aab2c0'
+        }).setOrigin(0, 0.5).setDepth(10);
+    }
+
+    private createButton (label: string, onClick: () => void): GameObjects.Text
+    {
+        const button = this.add.text(0, 0, label, {
+            fontFamily: 'Arial, sans-serif',
+            fontSize: '13px',
+            fontStyle: 'bold',
+            color: '#e6e9ef',
+            backgroundColor: INACTIVE_BUTTON_COLOR,
+            padding: { left: 10, right: 10, top: 3, bottom: 3 }
+        }).setOrigin(0, 0.5).setDepth(10).setInteractive({ useHandCursor: true });
+
+        button.on('pointerdown', onClick);
+        button.on('pointerover', () => {
+            button.setAlpha(0.8);
+        });
+        button.on('pointerout', () => {
+            button.setAlpha(1);
+        });
+
+        return button;
+    }
+
+    private setButtonActive (button: GameObjects.Text, active: boolean)
+    {
+        button.setBackgroundColor(active ? ACTIVE_BUTTON_COLOR : INACTIVE_BUTTON_COLOR);
+        button.setColor(active ? '#111318' : '#e6e9ef');
+    }
+
+    private setBadge (badge: GameObjects.Text, text: string, background: string, color: string)
+    {
+        badge.setText(text).setBackgroundColor(background).setColor(color);
+    }
+
+    private drawLegend ()
+    {
+        const items: readonly LegendItem[] = [
+            { label: 'Ladrón', shape: 'circle', color: COLORS.ladron },
+            { label: 'Llave', shape: 'circle', color: COLORS.key, letter: 'L' },
+            { label: 'Puerta', shape: 'square', color: COLORS.door, letter: 'P' },
+            { label: 'Tesoro', shape: 'square', color: COLORS.treasure, letter: 'T' },
+            { label: 'Salida', shape: 'square', color: COLORS.exit, letter: 'S' },
+            { label: 'Escondite', shape: 'circle', color: COLORS.hiding, letter: 'E' },
+            { label: 'Guardia', shape: 'circle', color: COLORS.guard, letter: 'G' },
+            { label: 'Última posición', shape: 'cross', color: COLORS.lastKnown }
+        ];
+
+        const entries = items.map((item) => ({
+            item,
+            label: this.add.text(0, 0, item.label, {
+                fontFamily: 'Arial, sans-serif',
+                fontSize: '13px',
+                color: '#c9cfd9'
+            }).setOrigin(0, 0.5).setDepth(10)
+        }));
+
+        const totalWidth = entries.reduce((sum, entry) => {
+            return sum + LEGEND_SWATCH + LEGEND_TEXT_GAP + entry.label.width;
+        }, 0) + LEGEND_ITEM_GAP * (entries.length - 1);
+
+        let x = CANVAS_WIDTH / 2 - totalWidth / 2;
+
+        entries.forEach((entry) => {
+            this.drawLegendSwatch(entry.item, x + LEGEND_SWATCH / 2, LEGEND_Y);
+            entry.label.setPosition(x + LEGEND_SWATCH + LEGEND_TEXT_GAP, LEGEND_Y);
+            x += LEGEND_SWATCH + LEGEND_TEXT_GAP + entry.label.width + LEGEND_ITEM_GAP;
+        });
+    }
+
+    private drawLegendSwatch (item: LegendItem, x: number, y: number)
+    {
+        if (item.shape === 'cross')
+        {
+            const size = LEGEND_SWATCH / 2 - 1;
+
+            this.add.graphics().setDepth(10)
+                .lineStyle(2, item.color, 1)
+                .lineBetween(x - size, y - size, x + size, y + size)
+                .lineBetween(x + size, y - size, x - size, y + size);
+
+            return;
+        }
+
+        const swatch = item.shape === 'circle'
+            ? this.add.circle(x, y, LEGEND_SWATCH / 2, item.color, 0.9)
+            : this.add.rectangle(x, y, LEGEND_SWATCH, LEGEND_SWATCH, item.color, 0.9);
+
+        swatch.setStrokeStyle(1.5, 0x111318, 0.9).setDepth(10);
+
+        if (item.letter)
+        {
+            this.add.text(x, y, item.letter, {
+                fontFamily: 'Arial Black, Arial, sans-serif',
+                fontSize: '10px',
+                color: '#111318'
+            }).setOrigin(0.5).setDepth(11);
+        }
+    }
+
+    private placeRow (items: GameObjects.Text[], y: number, anchor: 'left' | 'center' | 'right', x: number)
+    {
+        const visibleItems = items.filter((item) => item.visible);
+        const totalWidth = visibleItems.reduce((sum, item) => sum + item.width, 0)
+            + HUD_GAP * (visibleItems.length - 1);
+
+        let cursor = anchor === 'left' ? x : anchor === 'center' ? x - totalWidth / 2 : x - totalWidth;
+
+        visibleItems.forEach((item) => {
+            item.setPosition(cursor, y);
+            cursor += item.width + HUD_GAP;
+        });
+    }
+
+    private layoutHud ()
+    {
+        const rightEdge = CANVAS_WIDTH - HUD_MARGIN;
+        const center = CANVAS_WIDTH / 2;
+
+        this.placeRow([ this.gameStateBadge, this.detectionBadge ], HUD_ROW_1_Y, 'left', HUD_MARGIN);
+        this.placeRow(this.guardStateBadges, HUD_ROW_1_Y, 'right', rightEdge);
+
+        this.placeRow([ this.keyBadge, this.doorBadge ], HUD_ROW_2_Y, 'left', HUD_MARGIN);
+        this.placeRow(
+            [ this.algorithmLabel, ...Array.from(this.algorithmButtons.values()) ],
+            HUD_ROW_2_Y, 'center', center
+        );
+        this.placeRow(
+            [ this.guardLabel, ...Array.from(this.guardCountButtons.values()) ],
+            HUD_ROW_2_Y, 'right', rightEdge
+        );
+
+        this.placeRow([ this.treasureBadge ], HUD_ROW_3_Y, 'left', HUD_MARGIN);
+        this.placeRow(
+            [ this.navigationLabel, ...Array.from(this.navigationButtons.values()) ],
+            HUD_ROW_3_Y, 'center', center
+        );
+        this.placeRow([ this.routeButton, this.newGameButton ], HUD_ROW_3_Y, 'right', rightEdge);
+    }
+
     private updateHud ()
     {
-        const routeState = this.routeVisible ? 'visible' : 'oculta';
-        const gap = 8;
+        this.algorithmButtons.forEach((button, value) => {
+            this.setButtonActive(button, value === this.algorithm);
+        });
 
-        this.algorithmBadge.setText(this.algorithm);
-        this.navigationBadge.setText(this.navigationMode === 'cells' ? 'Por celdas' : 'Suavizada');
-        this.guardButton.setText(`Guardias: ${this.guardCount}`);
+        this.navigationButtons.forEach((button, value) => {
+            this.setButtonActive(button, value === this.navigationMode);
+        });
 
-        this.keyBadge.setText(this.hasKey ? 'Llave: sí' : 'Llave: no');
-        this.doorBadge.setText(this.doorOpen ? 'Puerta: abierta' : 'Puerta: cerrada');
-        this.treasureBadge.setText(`Tesoros: ${this.treasuresCollected} / ${this.scenario.treasures.length}`);
+        this.guardCountButtons.forEach((button, count) => {
+            this.setButtonActive(button, count === this.guardCount);
+        });
+
+        this.routeButton.setText(`Ruta: ${this.routeVisible ? 'visible' : 'oculta'} (P)`);
+        this.setButtonActive(this.routeButton, this.routeVisible);
+
+        if (this.gameWon)
+        {
+            this.setBadge(this.gameStateBadge, 'Victoria', '#7ee787', '#111318');
+        }
+        else if (this.gameLost)
+        {
+            this.setBadge(this.gameStateBadge, 'Derrota', '#ff5c5c', '#111318');
+        }
+        else
+        {
+            this.setBadge(this.gameStateBadge, 'En juego', '#59606d', '#e6e9ef');
+        }
 
         const anySees = this.guardAgents.some((agent) => agent.perception.seesThief);
         const anyNoise = this.guardAgents.some((agent) => {
@@ -679,82 +844,58 @@ export class Game extends Scene
 
         if (anySees)
         {
-            this.detectionBadge.setText('Detección: vista');
-            this.detectionBadge.setBackgroundColor('#ff5c5c');
-            this.detectionBadge.setColor('#111318');
+            this.setBadge(this.detectionBadge, 'Detección: vista', '#ff5c5c', '#111318');
         }
         else if (anyNoise)
         {
-            this.detectionBadge.setText('Detección: ruido');
-            this.detectionBadge.setBackgroundColor('#ffa94d');
-            this.detectionBadge.setColor('#111318');
+            this.setBadge(this.detectionBadge, 'Detección: ruido', '#ffa94d', '#111318');
         }
         else
         {
-            this.detectionBadge.setText('Detección: no');
-            this.detectionBadge.setBackgroundColor('#59606d');
-            this.detectionBadge.setColor('#e6e9ef');
+            this.setBadge(this.detectionBadge, 'Detección: no', '#59606d', '#e6e9ef');
         }
 
-        const guardStates = this.guardAgents.map((agent) => {
-            return GUARD_STATE_LABELS[agent.state];
+        this.guardStateBadges.forEach((badge, index) => {
+            const agent = this.guardAgents[index];
+
+            badge.setVisible(agent !== undefined);
+
+            if (agent === undefined)
+            {
+                return;
+            }
+
+            const style = GUARD_STATE_STYLE[agent.state];
+
+            this.setBadge(badge, `Guardia ${index + 1}: ${style.label}`, style.background, style.color);
         });
-
-        this.guardStateBadge.setText(`Guardias: ${guardStates.join(' · ')}`);
-
-        if (this.guardAgents.some((agent) => agent.state === 'PERSEGUIR'))
-        {
-            this.guardStateBadge.setBackgroundColor('#ff5c5c');
-            this.guardStateBadge.setColor('#111318');
-        }
-        else if (this.guardAgents.some((agent) => agent.state === 'INVESTIGAR'))
-        {
-            this.guardStateBadge.setBackgroundColor('#ffa94d');
-            this.guardStateBadge.setColor('#111318');
-        }
-        else
-        {
-            this.guardStateBadge.setBackgroundColor('#7ee787');
-            this.guardStateBadge.setColor('#111318');
-        }
-
-        const algorithmWidth = this.algorithmLabel.width + gap + this.algorithmBadge.width;
-        const algorithmStartX = 512 - algorithmWidth / 2;
-
-        this.algorithmLabel.setPosition(algorithmStartX, 50);
-        this.algorithmBadge.setPosition(algorithmStartX + this.algorithmLabel.width + gap, 50);
-
-        const navigationWidth = this.navigationLabel.width + gap + this.navigationBadge.width;
-        const navigationStartX = 512 - navigationWidth / 2;
-
-        this.navigationLabel.setPosition(navigationStartX, 70);
-        this.navigationBadge.setPosition(navigationStartX + this.navigationLabel.width + gap, 70);
-
-        if (this.doorOpen)
-        {
-            this.doorBadge.setBackgroundColor('#7ee787');
-            this.doorBadge.setColor('#111318');
-        }
-        else
-        {
-            this.doorBadge.setBackgroundColor('#ffb4a2');
-            this.doorBadge.setColor('#111318');
-        }
 
         if (this.hasKey)
         {
-            this.keyBadge.setBackgroundColor('#ffd166');
-            this.keyBadge.setColor('#111318');
+            this.setBadge(this.keyBadge, 'Llave: sí', '#ffd166', '#111318');
         }
         else
         {
-            this.keyBadge.setBackgroundColor('#59606d');
-            this.keyBadge.setColor('#e6e9ef');
+            this.setBadge(this.keyBadge, 'Llave: no', '#59606d', '#e6e9ef');
         }
 
-        this.controlsText.setText(
-            `Ruta: ${routeState}  |  1 BFS · 2 DFS · 3 A*  |  N: navegación  |  P: ruta  |  R: nueva partida`
+        if (this.doorOpen)
+        {
+            this.setBadge(this.doorBadge, 'Puerta: abierta', '#7ee787', '#111318');
+        }
+        else
+        {
+            this.setBadge(this.doorBadge, 'Puerta: cerrada', '#ffb4a2', '#111318');
+        }
+
+        this.setBadge(
+            this.treasureBadge,
+            `Tesoros: ${this.treasuresCollected} / ${this.scenario.treasures.length}`,
+            '#ff9f43',
+            '#111318'
         );
+
+        this.layoutHud();
     }
 
     private setAlgorithm (algorithm: SearchAlgorithm)
@@ -765,7 +906,17 @@ export class Game extends Scene
 
     private toggleNavigation ()
     {
-        this.navigationMode = this.navigationMode === 'cells' ? 'smooth' : 'cells';
+        this.setNavigationMode(this.navigationMode === 'cells' ? 'smooth' : 'cells');
+    }
+
+    private setNavigationMode (mode: NavigationMode)
+    {
+        if (mode === this.navigationMode)
+        {
+            return;
+        }
+
+        this.navigationMode = mode;
 
         if (this.moving && this.currentPath.length > 1)
         {
@@ -791,6 +942,22 @@ export class Game extends Scene
         this.routeVisible = !this.routeVisible;
         this.drawRoute();
         this.updateHud();
+    }
+
+    private setGuardCount (count: GuardCount)
+    {
+        if (count === this.guardCount)
+        {
+            return;
+        }
+
+        this.guardCount = count;
+        this.startNewGame();
+    }
+
+    private startNewGame ()
+    {
+        this.scene.restart();
     }
 
     private handlePointerDown (pointer: Input.Pointer)
