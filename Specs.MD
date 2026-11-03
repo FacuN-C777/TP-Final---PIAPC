@@ -23,8 +23,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 05 — Interacción y victoria | Terminada — aprobada | 04 |
 | 06 — Percepción | Terminada — aprobada | 05 |
 | 07 — FSM del guardia y derrota | Terminada — aprobada | 06 |
-| 08 — UI final y pulido | Planificada — pendiente de implementación | 01–07 |
-| 09 — README y presentación | Pendiente | 08 |
+| 08 — UI final y pulido | Terminada — aprobada | 01–07 |
+| 09 — README y presentación | Implementada — pendiente de aprobación | 08 |
 
 ---
 
@@ -369,7 +369,7 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 **Fuera de alcance:**
 - Menú de inicio, progresión, arte externo, audio, versión móvil, tablas de puntaje y nuevas mecánicas.
 
-**Enfoque preparado (pendiente de implementación):**
+**Enfoque implementado:**
 - Diagnóstico del estado actual antes de cambiar nada:
   - Algoritmo y navegación solo se cambian con teclas (`1/2/3`, `N`); no hay selectores con mouse.
   - No hay botón de nueva partida (solo `R`) ni botón de mostrar u ocultar la ruta (solo `P`).
@@ -385,25 +385,25 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
   - Botones de algoritmo y navegación con estado activo visible (color distinto); reutilizan las mismas funciones que las teclas `1/2/3` y `N`.
   - Botón de nueva partida equivalente a `R`, y botón de ruta equivalente a `P`.
   - Botón de guardias existente, pero con etiqueta clara (`Guardias: 1` / `Guardias: 2`).
-- Persistencia entre partidas (decisión propuesta, a confirmar): algoritmo, navegación, cantidad de guardias y visibilidad de la ruta se conservan al iniciar una nueva partida. Hoy `init()` los reinicia.
+- Persistencia entre partidas (confirmada): algoritmo, navegación, cantidad de guardias y visibilidad de la ruta se conservan al iniciar una nueva partida (`R` o botón). `init()` ya no los reinicia.
 - Estados y mensajes:
   - Badge de estado de partida: `En juego`, `Victoria` o `Derrota`.
   - Estado de guardias con nombres completos en lugar de `P / I / PE`: `Patrulla`, `Investiga`, `Persigue`, con color por estado.
   - Mensajes de victoria, derrota, clic inválido, ruido y detección revisados para que sean breves y consistentes.
 - Paleta: el ladrón pasa a un color que no comparta tono con la llave ni con la última posición conocida. Se revisan también puerta cerrada/abierta, tesoros, salida, escondites y guardias.
 - Leyenda inferior de una línea (símbolos y colores de llave, puerta, tesoro, salida, escondite, ladrón, guardia), ubicada debajo de la grilla y por encima del borde inferior. El mensaje de estado queda en una fila separada, sin superponerse.
-- Visualización de cono y audición de los guardias: se mantiene visible durante el juego, porque es la única forma de leer la visión en partida. Se cambian los textos de depuración por textos de juego. Pendiente de confirmación.
+- Visualización de cono y audición de los guardias: visible durante el juego (confirmado), porque es la única forma de leer la visión en partida. Los textos de depuración se reemplazaron por textos de juego. Se recorta a la grilla para no tapar la franja superior ni la leyenda.
 - Fuera de alcance de esta spec: menú de inicio, progresión, arte externo, audio, móvil, tablas de puntaje, nuevas mecánicas y la FSM del ladrón (`REPOSO`, `MOVIENDO`, `OCULTO`, `ATRAPADO`) descrita en el GDD, que no aparece en los criterios de la Spec 08.
-- Build: el criterio pide `npm run build`, pero ese script ejecuta `log.js`, que hace una petición a `gryzor.co`. Propuesta: verificar con `npm run build-nolog` (mismo bundle de producción) y pedir autorización explícita antes de ejecutar `npm run build`.
+- Build: `npm run build` ejecuta `log.js`, que hace una petición a `gryzor.co`. Decidido: verificar con `npm run build-nolog` y ejecutar `npm run build` con autorización explícita del usuario, que fue dada.
 
-**Verificación prevista:**
-1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
-2. Prueba CDP con clics reales (`Input.dispatchMouseEvent`) sobre cada botón y selector, comprobando el estado resultante en la escena y en el texto de los badges.
-3. Prueba de teclas `1/2/3`, `N`, `P`, `R`, incluida la persistencia de selecciones tras `R`.
-4. Comprobación de solapamientos: medir los límites de todos los textos y botones del HUD y verificar que no se intersectan y que quedan dentro del canvas.
-5. Capturas de pantalla en distintos estados (en juego, derrota, victoria, dos guardias, ruta oculta) revisadas visualmente.
-6. Partidas completas: al menos una victoria y una derrota con BFS/DFS/A* y ambas navegaciones.
-7. Sin errores de consola ni excepciones.
+**Verificación realizada:**
+1. `npx.cmd tsc --noEmit`, `npm.cmd run build-nolog` y `npm.cmd run build` pasaron.
+2. Prueba CDP con Chrome headless y clics reales (`Input.dispatchMouseEvent`) sobre `npm run dev-nolog`: 33 comprobaciones de estado inicial, selectores, botones, teclas `1/2/3`, `N`, `P`, `R`, persistencia tras `R` y tras los botones, cantidad de guardias y clic en pared.
+3. Partidas completas (15 comprobaciones): victorias con A* suavizada (2 guardias) y DFS suavizada (1 guardia); derrotas con A* por celdas (2 guardias), BFS suavizada con ruta oculta (1 guardia) y DFS por celdas (2 guardias). Cada derrota verificó que los clics se ignoran y que `R` reinicia conservando selecciones. Dos victorias fallaron en los primeros intentos porque el guardia atrapó al ladrón; se obtuvieron con reintentos. Es comportamiento de juego, no un error.
+4. Solapamientos medidos en todos los estados: 0. HUD dentro del canvas; franja superior hasta y=89; leyenda desde y=726.
+5. Capturas revisadas: inicio, dos guardias, victoria y derrota con ruta oculta.
+6. Sin errores de consola ni excepciones.
+7. Correcciones durante la verificación: la visión y la audición se recortan a la grilla con una máscara.
 
 **Cómo comprobarla jugando:**
 1. Jugar partidas completas con BFS, DFS y A*.
@@ -427,9 +427,27 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 - La presentación muestra una spec concreta y explica cómo se verificó.
 - La presentación incluye una demo corta y un espacio para limitaciones.
 - Las instrucciones se pueden seguir desde un clon limpio del repositorio.
+- El juego se puede jugar desde el navegador en un despliegue público en Vercel. El README y la presentación enlazan ese despliegue.
 
 **Fuera de alcance:**
 - Informe extenso, carpeta de evidencias, video obligatorio, diapositivas con arte elaborado o métricas comparativas.
+
+**Enfoque implementado:**
+- Decisiones confirmadas por el usuario:
+  - Presentación en Markdown dentro del repo (`PRESENTACION.md`).
+  - `Template-README.md` eliminado.
+  - `screenshot.png` reemplazado por una captura del juego. `public/favicon.png`, `public/assets/logo.png` y `public/assets/bg.png` eliminados, junto con el enlace al favicon en `index.html` (ningún código los usaba). `public/style.css` y `LICENSE` se mantienen.
+  - `package.json` y `package-lock.json`: `name` pasa a `asecho-nocturno` y `description` describe el TP.
+- `README.md` reescrito en español: descripción, requisitos, instalación, ejecución, scripts, controles, estructura, enlaces al GDD, Specs y presentación, estado de las specs, limitaciones y nota sobre `log.js`.
+- `PRESENTACION.md` nuevo: idea, búsqueda, navegación, percepción, objetivos, FSM, escenarios variables, decisiones, uso de OpenCode y spec-driven, Spec 07 con su verificación, guion de demo, limitaciones (con espacio para completar) y cierre.
+- `log.js` sin cambios: sigue enviando el nombre del proyecto en `npm run dev` y `npm run build`; las variantes `-nolog` no envían nada.
+- Despliegue en Vercel (cambio de alcance confirmado por el usuario): el juego se publica como sitio estático generado por Vite. Configuración recomendada en Vercel: Build Command `npm run build-nolog`, Output Directory `dist`, Install Command `npm install`. El enlace al despliegue queda en el README y en la presentación. Pendiente: crear el proyecto en Vercel y completar el enlace.
+
+**Verificación realizada:**
+- Copia limpia en una carpeta temporal con los archivos versionados o no ignorados (sin `node_modules` ni `dist`): `npm install` sin errores ni vulnerabilidades, `tsc --noEmit` y `build-nolog` pasaron, `npm run dev-nolog` respondió 200 y la página contiene el título del juego.
+- `npm run build` no se ejecutó: la autorización dada en la Spec 08 era para esa spec.
+- Pendiente tras el commit del usuario: repetir el clon limpio desde git, porque la copia actual incluye cambios sin commitear.
+- Pendiente: `package.json` aún tiene `repository`, `bugs`, `homepage` y `author` apuntando al template de Phaser. No se cambiaron por no estar en la decisión; conviene decidirlo.
 
 **Cómo comprobarla jugando:**
 1. Seguir el README desde cero: `npm install`, `npm run dev` y `npm run build`.

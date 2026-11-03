@@ -1,6 +1,6 @@
 {
-  "name": "template-vite-ts",
-  "description": "A Phaser 3 TypeScript template using Vite.",
+  "name": "asecho-nocturno",
+  "description": "Asecho Nocturno: prototipo de sigilo en grilla con búsquedas BFS, DFS y A*, navegación y FSM del guardia. TP Final PIAPC.",
   "version": "1.4.0",
   "repository": {
     "type": "git",
