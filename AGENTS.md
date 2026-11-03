@@ -5,9 +5,9 @@
 - TP Final Integrador de PIAPC, individual.
 - Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y aprobada por el usuario. La Spec 07 está terminada y pendiente de aprobación del usuario.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y aprobada por el usuario. La Spec 07 está terminada y aprobada por el usuario. La Spec 08 está planificada y pendiente de implementación.
 - El usuario maneja los commits, las ramas y el push. No hacer commits, push ni crear ramas por cuenta propia. Al iniciar cada sesión, comprobar `git status` y `git branch --show-current`; si hay cambios sin commitear o la rama no es la esperada, preguntar antes de tocar código.
-- La Spec 07 está implementada en la rama `seventh-Spec` sobre la planificación ya commiteada (`02538cd`). Quedan sin commitear `src/game/guard.ts` (nuevo), `src/game/pathfinding.ts`, `src/game/perception.ts`, `src/game/scenes/Game.ts`, `Specs.MD` y `AGENTS.md`; el usuario debe revisar y commitear.
+- La Spec 07 quedó commiteada en `87bb3a5` (rama `seventh-Spec`) y aprobada. La sesión de la Spec 08 empieza en la rama `eighth-Spec`, con el árbol limpio.
 - `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, los guardias, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` (incluye `findGuardPath`, que trata la puerta cerrada como transitable) y `src/game/navigation.ts` contienen las búsquedas y el suavizado; `src/game/perception.ts` contiene la percepción pura del guardia; `src/game/guard.ts` contiene la FSM pura del guardia.
 - La Spec 02 dejó el HUD con un badge verde para el algoritmo activo, la ruta recortándose al avanzar y desapareciendo al llegar, y los controles `1`/`2`/`3`, `P` y `R`.
 - Verificación de la Spec 02: `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron; la prueba CDP en Chrome headless no mostró errores; BFS y A* dieron caminos mínimos, DFS caminos válidos; se comprobaron clics inválidos, `P`, `R`, cancelación en movimiento y llegada.
@@ -35,7 +35,7 @@
 
 ## Última spec implementada: Spec 07 — FSM del guardia y derrota
 
-**Estado:** implementada y verificada; pendiente de aprobación del usuario.
+**Estado:** implementada, verificada, aprobada por el usuario y commiteada en `87bb3a5`.
 
 **Qué se hizo:**
 
@@ -58,6 +58,35 @@
 - Un ladrón inmóvil dentro del cono de un guardia termina derrotado; es el comportamiento esperado.
 - Guardia más lento que el ladrón (4 vs 5 celdas/s): la persecución puede no alcanzar a un ladrón en movimiento.
 - Pendiente de la spec 08: ajustar textos y estilo del HUD para el estado de los guardias.
+
+## Próximo paso: Spec 08 — UI final y pulido
+
+**Estado:** planificada, pendiente de implementación en una sesión nueva. No implementar sin leer antes `Specs.MD` (Spec 08, incluido "Enfoque preparado"), la sección 9 de `GDD.MD` y esta guía.
+
+**Objetivo:** HUD completo y legible, selectores y botones usables con mouse y teclado, mensajes breves, paleta distinguible y build de producción sin errores.
+
+**Decisiones abiertas que hay que confirmar con el usuario antes de programar:**
+
+1. Persistir algoritmo, navegación, cantidad de guardias y visibilidad de la ruta entre partidas (recomendado: sí).
+2. Mantener visibles el cono y la zona de audición de los guardias durante el juego (recomendado: sí).
+3. Verificar el build con `npm run build-nolog` y pedir autorización para `npm run build`, porque `log.js` envía una petición externa.
+
+**Antes de empezar:**
+
+1. Comprobar `git status` y `git branch --show-current`; se espera la rama `eighth-Spec` con árbol limpio.
+2. Confirmar que el usuario pidió implementar la Spec 08 en esa sesión.
+3. Reutilizar las funciones existentes (`setAlgorithm`, `toggleNavigation`, `toggleRoute`, `scene.restart`) para que los botones y las teclas compartan el mismo camino; no duplicar lógica.
+4. No tocar la lógica de búsqueda, percepción ni FSM salvo lo necesario para la UI.
+5. No agregar dependencias nuevas.
+
+**Notas de entorno para las pruebas (aprendidas en la Spec 07):**
+
+- `npm run dev-nolog` puede usar 8080 u 8081 si el puerto está ocupado; comprobar cuál responde antes de abrir Chrome.
+- Lanzar el servidor desde `cmd.exe /c npm.cmd run dev-nolog` con `-WindowStyle Hidden`, esperar a que responda y detenerlo al terminar.
+- Chrome headless con `--remote-debugging-port=9222` y perfil temporal. Para cerrarlo, usar solo el PID lanzado; no ejecutar `taskkill /IM chrome.exe`, porque cierra también el navegador personal.
+- Esperar a que el servidor responda antes de navegar la pestaña; si no, la página queda en `ERR_CONNECTION_REFUSED`.
+- Las pruebas que dependen de un escenario aleatorio deben colocar al ladrón lejos de los guardias antes de medir patrulla, y no acelerar el tiempo si el ladrón está inmóvil dentro de un cono.
+- Los scripts temporales (`spec*-test.ts`, `spec*-cdp.mjs`, `check-page.mjs`) y la exposición `window.__gameScene` deben retirarse antes de cerrar.
 
 ## Reglas de trabajo
 

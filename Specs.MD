@@ -22,8 +22,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 04 — Escenarios variables | Terminada — aprobada | 02 |
 | 05 — Interacción y victoria | Terminada — aprobada | 04 |
 | 06 — Percepción | Terminada — aprobada | 05 |
-| 07 — FSM del guardia y derrota | Terminada — pendiente de aprobación | 06 |
-| 08 — UI final y pulido | Pendiente | 01–07 |
+| 07 — FSM del guardia y derrota | Terminada — aprobada | 06 |
+| 08 — UI final y pulido | Planificada — pendiente de implementación | 01–07 |
 | 09 — README y presentación | Pendiente | 08 |
 
 ---
@@ -368,6 +368,42 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - Menú de inicio, progresión, arte externo, audio, versión móvil, tablas de puntaje y nuevas mecánicas.
+
+**Enfoque preparado (pendiente de implementación):**
+- Diagnóstico del estado actual antes de cambiar nada:
+  - Algoritmo y navegación solo se cambian con teclas (`1/2/3`, `N`); no hay selectores con mouse.
+  - No hay botón de nueva partida (solo `R`) ni botón de mostrar u ocultar la ruta (solo `P`).
+  - `init()` reinicia algoritmo y navegación en cada partida.
+  - El ladrón, la llave y la última posición conocida usan tonos amarillos muy parecidos.
+  - La franja superior tiene 96 px y reparte el título, dos badges de detección y guardias, llave, puerta, selectores, tesoros, botón de guardias y una línea de controles. Hay que comprobar solapamientos con medidas reales.
+- HUD en tres filas dentro de la franja superior (`y < 96`), con medidas comprobadas:
+  - Fila 1: título centrado; detección a la izquierda; estado de guardias a la derecha.
+  - Fila 2: llave y puerta a la izquierda; selector de algoritmo (BFS, DFS, A*) centrado; botón de guardias (1/2) a la derecha.
+  - Fila 3: tesoros a la izquierda; selector de navegación (Por celdas, Suavizada) centrado; botones de ruta (P) y nueva partida (R) a la derecha.
+  - La línea de controles con teclas se elimina o se reduce a una pista debajo de la grilla, para no competir con las filas.
+- Selectores y botones clicables:
+  - Botones de algoritmo y navegación con estado activo visible (color distinto); reutilizan las mismas funciones que las teclas `1/2/3` y `N`.
+  - Botón de nueva partida equivalente a `R`, y botón de ruta equivalente a `P`.
+  - Botón de guardias existente, pero con etiqueta clara (`Guardias: 1` / `Guardias: 2`).
+- Persistencia entre partidas (decisión propuesta, a confirmar): algoritmo, navegación, cantidad de guardias y visibilidad de la ruta se conservan al iniciar una nueva partida. Hoy `init()` los reinicia.
+- Estados y mensajes:
+  - Badge de estado de partida: `En juego`, `Victoria` o `Derrota`.
+  - Estado de guardias con nombres completos en lugar de `P / I / PE`: `Patrulla`, `Investiga`, `Persigue`, con color por estado.
+  - Mensajes de victoria, derrota, clic inválido, ruido y detección revisados para que sean breves y consistentes.
+- Paleta: el ladrón pasa a un color que no comparta tono con la llave ni con la última posición conocida. Se revisan también puerta cerrada/abierta, tesoros, salida, escondites y guardias.
+- Leyenda inferior de una línea (símbolos y colores de llave, puerta, tesoro, salida, escondite, ladrón, guardia), ubicada debajo de la grilla y por encima del borde inferior. El mensaje de estado queda en una fila separada, sin superponerse.
+- Visualización de cono y audición de los guardias: se mantiene visible durante el juego, porque es la única forma de leer la visión en partida. Se cambian los textos de depuración por textos de juego. Pendiente de confirmación.
+- Fuera de alcance de esta spec: menú de inicio, progresión, arte externo, audio, móvil, tablas de puntaje, nuevas mecánicas y la FSM del ladrón (`REPOSO`, `MOVIENDO`, `OCULTO`, `ATRAPADO`) descrita en el GDD, que no aparece en los criterios de la Spec 08.
+- Build: el criterio pide `npm run build`, pero ese script ejecuta `log.js`, que hace una petición a `gryzor.co`. Propuesta: verificar con `npm run build-nolog` (mismo bundle de producción) y pedir autorización explícita antes de ejecutar `npm run build`.
+
+**Verificación prevista:**
+1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
+2. Prueba CDP con clics reales (`Input.dispatchMouseEvent`) sobre cada botón y selector, comprobando el estado resultante en la escena y en el texto de los badges.
+3. Prueba de teclas `1/2/3`, `N`, `P`, `R`, incluida la persistencia de selecciones tras `R`.
+4. Comprobación de solapamientos: medir los límites de todos los textos y botones del HUD y verificar que no se intersectan y que quedan dentro del canvas.
+5. Capturas de pantalla en distintos estados (en juego, derrota, victoria, dos guardias, ruta oculta) revisadas visualmente.
+6. Partidas completas: al menos una victoria y una derrota con BFS/DFS/A* y ambas navegaciones.
+7. Sin errores de consola ni excepciones.
 
 **Cómo comprobarla jugando:**
 1. Jugar partidas completas con BFS, DFS y A*.
