@@ -21,8 +21,8 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 | 03 — Navegación | Terminada | 02 |
 | 04 — Escenarios variables | Terminada — aprobada | 02 |
 | 05 — Interacción y victoria | Terminada — aprobada | 04 |
-| 06 — Percepción | Terminada — pendiente de aprobación | 05 |
-| 07 — FSM del guardia y derrota | Pendiente | 06 |
+| 06 — Percepción | Terminada — aprobada | 05 |
+| 07 — FSM del guardia y derrota | Planificada — pendiente de implementación | 06 |
 | 08 — UI final y pulido | Pendiente | 01–07 |
 | 09 — README y presentación | Pendiente | 08 |
 
@@ -306,6 +306,40 @@ Documento de specs ordenadas por dependencias. Cada spec es una entrega pequeña
 
 **Fuera de alcance:**
 - Tácticas coordinadas entre guardias, GOAP, árboles de comportamiento, puntaje, búsqueda de escondites sospechosos y percepción realista del sonido.
+
+**Enfoque preparado (pendiente de implementación):**
+- Crear `src/game/guard.ts` con la FSM pura, sin Phaser y verificable de forma programática:
+  - `GuardState = 'PATRULLA' | 'INVESTIGAR' | 'PERSEGUIR'`.
+  - `GuardAgent` con `perception`, `state`, `destination`, `path`, `waypoints`, `waypointIndex`, `moving`, `observeUntil` y `handledNoiseAt`.
+  - Funciones puras para crear el agente, elegir un destino de patrulla al azar entre celdas alcanzables (excluyendo la actual), decidir la transición según visión, ruido y tiempo, y devolver una acción (`moverse`, `observar` o `quieto`).
+  - `INVESTIGAR` observa durante un tiempo fijo (por ejemplo 2 s) al llegar; si no encuentra nada, vuelve a `PATRULLA`.
+  - La selección aleatoria recibe `random` inyectable para poder testear.
+- Rutas de guardia:
+  - Refactorizar `pathfinding.ts` para aceptar un predicado de transitabilidad y agregar `findGuardPath`, que trata la puerta cerrada como transitable. El `findPath` del ladrón conserva el comportamiento actual.
+  - Los guardias usan el algoritmo activo y `buildWaypoints` con la navegación activa. Si la puerta está cerrada, el suavizado no corta a través de ella, pero el recorrido celda a celda sí la cruza.
+- Movimiento en `Game.ts`:
+  - Un `GuardAgent` por celda de `scenario.guards`, reiniciado en `init()` y en cada nueva partida.
+  - Mover el marcador del guardia con tweens por waypoints; al cambiar de celda actualizar `perception.cell`, recalcular la percepción y comprobar la derrota.
+  - Actualizar `perception.facing` hacia el eje dominante del siguiente waypoint al iniciar cada tramo.
+  - Velocidad de guardia fija y algo menor que la del ladrón (por ejemplo 4 celdas/s).
+  - Calcular una vez por escenario las celdas alcanzables para patrulla con un flood que considere la puerta transitable.
+- Transiciones:
+  - Ver al ladrón → `PERSEGUIR` con destino en la celda actual del ladrón.
+  - En `PERSEGUIR`, si deja de verlo → `INVESTIGAR` con destino en `lastKnownPosition`.
+  - Ruido nuevo (`lastNoise.at` mayor que el último atendido) → `INVESTIGAR` al origen, salvo que esté persiguiendo.
+  - En `PATRULLA`, al llegar a destino elegir otra celda alcanzable al azar y recalcular la ruta.
+- Derrota:
+  - Si un guardia comparte celda con el ladrón (al completar un tramo, al cambiar la celda redondeada durante el tween o al moverse el ladrón), marcar `gameLost`, detener tweens de ladrón y guardias, limpiar la ruta y mostrar un mensaje persistente de derrota. Ignorar clics hasta `R`.
+- HUD y depuración:
+  - Badge compacto con el estado de cada guardia en la franja superior para observar la FSM.
+  - Mantener la visualización de percepción de la Spec 06.
+- No agregar dependencias nuevas.
+
+**Verificación esperada:**
+1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
+2. Prueba programática con esbuild + Node sobre `guard.ts` y `findGuardPath`: transiciones, observación y timeout, ruido, última posición, destino de patrulla distinto del actual, puerta cerrada transitable para guardias y bloqueada para el ladrón.
+3. Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar): patrulla y cambio de destino, ruido → `INVESTIGAR`, visión → `PERSEGUIR`, pérdida de visión → `INVESTIGAR`, derrota al alcanzar, `R` reinicia, 1 y 2 guardias, sin errores de consola.
+4. Actualizar `Specs.MD` y `AGENTS.md` al terminar.
 
 **Cómo comprobarla jugando:**
 1. Observar al guardia patrullar y comprobar que cambia de destino al llegar.

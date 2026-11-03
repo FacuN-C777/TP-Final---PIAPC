@@ -5,9 +5,9 @@
 - TP Final Integrador de PIAPC, individual.
 - Motor: Phaser 4.2.1 con Vite y TypeScript. El template original fue reemplazado por la escena de grilla de la Spec 01.
 - `GDD.MD` está aprobado y es la fuente de verdad del diseño.
-- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y pendiente de aprobación.
+- `Specs.MD` contiene las 9 specs ordenadas y sus criterios de verificación. La Spec 01 está terminada y aprobada. La Spec 02 está terminada y aprobada por el usuario, con los ajustes visuales incluidos. La Spec 03 está terminada y aprobada. La Spec 04 está terminada y aprobada por el usuario. La Spec 05 está terminada y aprobada por el usuario. La Spec 06 está terminada y aprobada por el usuario. La Spec 07 está planificada y pendiente de implementación.
 - El usuario maneja los commits, las ramas y el push. No hacer commits, push ni crear ramas por cuenta propia. Al iniciar cada sesión, comprobar `git status` y `git branch --show-current`; si hay cambios sin commitear o la rama no es la esperada, preguntar antes de tocar código.
-- La Spec 06 se implementó en la rama `sixth-Spec`, que ya contenía la planificación sin commitear. Al cierre, quedan modificados `AGENTS.md`, `Specs.MD`, `src/game/scenes/Game.ts` y el nuevo `src/game/perception.ts`; el usuario debe revisar y commitear. No se creó una rama nueva para la implementación por decisión explícita del usuario.
+- La Spec 06 se commiteó en `cf990d9` y el usuario abrió la rama `seventh-Spec`. Esta sesión de planificación solo actualizó `Specs.MD` y `AGENTS.md`; no se tocó código. El usuario debe revisar y commitear la planificación antes de implementar la Spec 07.
 - `src/game/scenes/Game.ts` muestra la grilla de 17 × 13, el escenario generado, el ladrón, el HUD, el reinicio con `R` y la navegación con `N`; `src/game/grid.ts` contiene la grilla y el mapa activo; `src/game/scenario.ts` genera y valida escenarios; `src/game/pathfinding.ts` y `src/game/navigation.ts` contienen las búsquedas y el suavizado; `src/game/perception.ts` contiene la percepción pura del guardia.
 - La Spec 02 dejó el HUD con un badge verde para el algoritmo activo, la ruta recortándose al avanzar y desapareciendo al llegar, y los controles `1`/`2`/`3`, `P` y `R`.
 - Verificación de la Spec 02: `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog` pasaron; la prueba CDP en Chrome headless no mostró errores; BFS y A* dieron caminos mínimos, DFS caminos válidos; se comprobaron clics inválidos, `P`, `R`, cancelación en movimiento y llegada.
@@ -15,7 +15,7 @@
 
 ## Última spec implementada: Spec 06 — Percepción
 
-**Estado:** implementada, verificada y pendiente de aprobación del usuario.
+**Estado:** implementada, verificada, aprobada por el usuario y commiteada en `cf990d9`.
 
 **Qué se hizo:**
 
@@ -35,9 +35,25 @@
 
 ## Próximo paso: Spec 07 — FSM del guardia y derrota
 
-**Estado:** pendiente de planificación e implementación en una sesión nueva. No implementar sin leer antes `Specs.MD` (Spec 07), las secciones 4, 5 y 6 de `GDD.MD` y esta guía.
+**Estado:** planificada, pendiente de implementación en una sesión nueva. No implementar sin leer antes `Specs.MD` (Spec 07), las secciones 4, 5 y 6 de `GDD.MD` y esta guía.
 
 **Objetivo:** implementar la FSM del guardia (`PATRULLA`, `INVESTIGAR`, `PERSEGUIR`) usando la percepción de la Spec 06, moverlo con la búsqueda y navegación activas, permitir que cruce puertas cerradas y declarar derrota al alcanzar al ladrón.
+
+**Plan preparado:**
+
+- Crear `src/game/guard.ts` con la FSM pura y sin Phaser: `GuardState`, `GuardAgent` (`perception`, `state`, `destination`, `path`, `waypoints`, `waypointIndex`, `moving`, `observeUntil`, `handledNoiseAt`), creación del agente, elección aleatoria de destino de patrulla entre celdas alcanzables (excluyendo la actual), transiciones por visión/ruido/tiempo y acciones `moverse` / `observar` / `quieto`. `INVESTIGAR` observa unos 2 s y vuelve a `PATRULLA`. La función aleatoria se inyecta para testear.
+- Refactorizar `pathfinding.ts` para aceptar un predicado de transitabilidad y agregar `findGuardPath`, que trata la puerta cerrada como transitable; `findPath` del ladrón no cambia.
+- En `Game.ts`, crear un `GuardAgent` por guardia, mover el marcador con tweens por waypoints usando el algoritmo y la navegación activos, actualizar `perception.cell` y `perception.facing` (eje dominante del siguiente waypoint) y recalcular la percepción. Velocidad de guardia fija algo menor que la del ladrón (por ejemplo 4 celdas/s).
+- Calcular una vez por escenario las celdas alcanzables para patrulla con un flood que considere la puerta transitable.
+- Transiciones: ver al ladrón → `PERSEGUIR`; perderlo → `INVESTIGAR` en `lastKnownPosition`; ruido nuevo → `INVESTIGAR` en el origen salvo persecución; llegar a investigar y no encontrar nada → `PATRULLA`; en patrulla, al llegar elegir otro destino.
+- Derrota si un guardia comparte celda con el ladrón (al completar un tramo, al cambiar la celda redondeada durante el tween o al moverse el ladrón): marcar `gameLost`, detener tweens, limpiar la ruta, mostrar mensaje persistente e ignorar clics hasta `R`.
+- Agregar un badge compacto con el estado de cada guardia en la franja superior y conservar la visualización de percepción de la Spec 06.
+
+**Verificación prevista:**
+
+1. `npx.cmd tsc --noEmit` y `npm.cmd run build-nolog`.
+2. Prueba programática con esbuild + Node sobre `guard.ts` y `findGuardPath`: transiciones, observación y timeout, ruido, última posición, destino de patrulla distinto del actual, puerta cerrada transitable para guardias y bloqueada para el ladrón.
+3. Prueba CDP con Chrome headless sobre `npm run dev-nolog` con exposición temporal de la escena (retirada al terminar): patrulla y cambio de destino, ruido → `INVESTIGAR`, visión → `PERSEGUIR`, pérdida de visión → `INVESTIGAR`, derrota al alcanzar, `R` reinicia, 1 y 2 guardias, sin errores de consola.
 
 **Antes de empezar:**
 
